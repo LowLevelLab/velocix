@@ -104,6 +104,7 @@ class RequestLimitsMiddleware(SecurityMiddleware):
             source_ip = str(client[0])
 
         path = request.scope.get("path", "")
+        method = request.scope.get("method", "GET").upper()
         headers = request.scope.get("headers", [])
 
         # 1. Header count
@@ -184,7 +185,7 @@ class RequestLimitsMiddleware(SecurityMiddleware):
         #    as they arrive and disconnect when limit is exceeded.
         if self._max_body_size is not None:
             has_content_length = any(k == b"content-length" for k, _ in headers)
-            if not has_content_length and method in ("POST", "PUT", "PATCH"):
+            if not has_content_length and method in ("POST", "PUT", "PATCH", "DELETE"):
                 original_receive = request._receive
                 accumulated = 0
                 max_size = self._max_body_size

@@ -379,7 +379,7 @@ class InputSanitizer:
             # Use result.clean safely
 
         # Check a URL path
-        if sanitizer.has_path_traversal(request.url.path):
+        if sanitizer.has_path_traversal(request.path):
             return JSONResponse({"error": "Bad path"}, status_code=400)
     """
 
@@ -408,7 +408,14 @@ class InputSanitizer:
         return cls(xss_action, sqli_action)
 
     def sanitize_value(self, value: str) -> SanitizationResult:
-        """Check a single string value for XSS and SQLi. Returns cleaned value + violations."""
+        """Check a single string value for XSS and SQLi. Returns cleaned value + violations.
+
+        Respects configured actions:
+        - XSS BLOCK: returns original value with violations (caller should reject).
+        - XSS SANITIZE: strips HTML tags via nh3.
+        - SQLi BLOCK: returns original value with violations (caller should reject).
+        - SQLi LOG: flags but does not modify.
+        """
         violations: list[str] = []
         clean = value
 
@@ -423,6 +430,8 @@ class InputSanitizer:
         # SQLi
         if detect_sqli(value):
             violations.append("sqli")
+            if self._sqli_action == SanitizeAction.BLOCK:
+                return SanitizationResult(value, violations)
 
         return SanitizationResult(clean, violations)
 

@@ -312,12 +312,14 @@ class CSRFProtection:
         @app.get("/page")
         async def get_page():
             token = csrf.generate_token()
-            return HTMLResponse(f"<form><input name=\"_csrf\" value=\"{token}\"></form>")
+            response = HTMLResponse(f"<form><input name=\"_csrf\" value=\"{token}\"></form>")
+            csrf.set_cookie(response, token)  # set the cookie on the response
+            return response
 
         @app.post("/page")
         async def post_page(request: Request):
             cookie_token = csrf.get_token_from_cookie(request)
-            header_token = request.headers.get("x-csrf-token", "")
+            header_token = request.headers.get(b"x-csrf-token", b"").decode("latin-1")
             result = csrf.validate(cookie_token, header_token)
             if not result.valid:
                 return JSONResponse({"error": result.error}, status_code=403)
@@ -407,3 +409,13 @@ class CSRFProtection:
                         return part.split("=", 1)[1]
                 break
         return None
+
+    def set_cookie(self, response: Response, token: str) -> None:
+        """Set the CSRF cookie on a response."""
+        response.raw_headers.append((
+            b"set-cookie",
+            (
+                f"{self._cookie_name}={token}; "
+                f"Path=/; SameSite=lax; HttpOnly"
+            ).encode("latin-1"),
+        ))
