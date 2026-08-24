@@ -32,6 +32,7 @@ dependencies = [
     "httpx>=0.25.0",
     "aiofiles>=23.0.0",
     "itsdangerous>=2.0.0",
+    "nh3>=0.2.0",
 ]
 
 [project.urls]
