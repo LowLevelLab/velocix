@@ -340,3 +340,109 @@ class InputSanitizationMiddleware(SecurityMiddleware):
             )
 
         return await self.app(request)
+
+
+# ---------------------------------------------------------------------------
+# Standalone sanitizer utility — no middleware required
+# ---------------------------------------------------------------------------
+
+
+class SanitizationResult:
+    """Result of a sanitization check on a single value."""
+
+    __slots__ = ("clean", "violations")
+
+    def __init__(self, clean: str, violations: list[str]) -> None:
+        self.clean = clean
+        self.violations = violations
+
+
+class InputSanitizer:
+    """Standalone input sanitizer — check and clean values without middleware.
+
+    Use this when you want to sanitize specific values in handlers rather than
+    scanning every request via middleware.
+
+    Usage::
+
+        from velocix.security.input_sanitization import InputSanitizer
+
+        sanitizer = InputSanitizer.create()
+
+        @app.post("/comment")
+        async def post_comment(request: Request):
+            data = await request.json()
+            # Sanitize the title field
+            result = sanitizer.sanitize_value(data["title"])
+            if result.violations:
+                return JSONResponse({"error": "Invalid input"}, status_code=400)
+            # Use result.clean safely
+
+        # Check a URL path
+        if sanitizer.has_path_traversal(request.url.path):
+            return JSONResponse({"error": "Bad path"}, status_code=400)
+    """
+
+    __slots__ = ("_xss_action", "_sqli_action")
+
+    def __init__(
+        self,
+        xss_action: SanitizeAction = SanitizeAction.SANITIZE,
+        sqli_action: SanitizeAction = SanitizeAction.LOG,
+    ) -> None:
+        self._xss_action = xss_action
+        self._sqli_action = sqli_action
+
+    @classmethod
+    def create(
+        cls,
+        xss_action: SanitizeAction = SanitizeAction.SANITIZE,
+        sqli_action: SanitizeAction = SanitizeAction.LOG,
+    ) -> "InputSanitizer":
+        """Create a standalone InputSanitizer.
+
+        Args:
+            xss_action: What to do with XSS violations.
+            sqli_action: What to do with SQLi detections.
+        """
+        return cls(xss_action, sqli_action)
+
+    def sanitize_value(self, value: str) -> SanitizationResult:
+        """Check a single string value for XSS and SQLi. Returns cleaned value + violations."""
+        violations: list[str] = []
+        clean = value
+
+        # XSS
+        if _has_html(value):
+            violations.append("xss")
+            if self._xss_action == SanitizeAction.SANITIZE:
+                clean = nh3.clean(clean)
+            elif self._xss_action == SanitizeAction.BLOCK:
+                return SanitizationResult(value, violations)
+
+        # SQLi
+        if detect_sqli(value):
+            violations.append("sqli")
+
+        return SanitizationResult(clean, violations)
+
+    def has_xss(self, value: str) -> bool:
+        """Return True if value contains XSS-suspicious HTML."""
+        return _has_html(value)
+
+    def has_sqli(self, value: str) -> bool:
+        """Return True if value matches SQL injection patterns."""
+        return detect_sqli(value)
+
+    def has_path_traversal(self, path: str) -> bool:
+        """Return True if path contains ``..`` segments."""
+        return _has_path_traversal(path)
+
+    def sanitize_query_string(self, query_string: bytes) -> tuple[bytes, list[str]]:
+        """Sanitize a raw query string. Returns (possibly modified) bytes and violations."""
+        return _sanitize_query_string(query_string, self._xss_action)
+
+    def scan_json_body(self, body: bytes) -> list[str]:
+        """Scan a JSON body for XSS/SQLi. Returns list of violation descriptions."""
+        _, violations = _sanitize_json_body(body, self._sqli_action)
+        return violations

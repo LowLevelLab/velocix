@@ -35,13 +35,14 @@ Usage as middleware::
 Usage as utility (no middleware)::
 
     from velocix.security.brute_force import BruteForceProtection
+    from velocix.security.base import MemoryBackend
 
-    bf = BruteForceProtection.__new__(BruteForceProtection)
-    bf._max_attempts = 5
-    bf._window_seconds = 900
-    bf._lockout_seconds = 1800
-    bf._backend = MemoryBackend()
-    bf._lockouts: dict[str, float] = {}
+    bf = BruteForceProtection.create(
+        max_attempts=5,
+        window_seconds=900,
+        lockout_seconds=1800,
+        backend=MemoryBackend(),
+    )
 
     # In your login handler:
     key = f"login:{username}:{ip}"
@@ -120,6 +121,40 @@ class BruteForceProtection(SecurityMiddleware):
         self._backend = backend or MemoryBackend()
         self._key_func = key_func or self._default_key_func
         self._lockouts: dict[str, float] = {}
+
+    @classmethod
+    def create(
+        cls,
+        max_attempts: int = 5,
+        window_seconds: float = 900,
+        lockout_seconds: float = 1800,
+        backend: StorageBackend | None = None,
+        on_event: EventCallback | None = None,
+    ) -> "BruteForceProtection":
+        """Create a standalone BruteForceProtection instance without middleware.
+
+        Use this when you want to call ``is_locked``, ``record_failure``,
+        and ``mark_success`` directly from your handler without adding
+        middleware to the app.
+
+        Args:
+            max_attempts: Max failed attempts before lockout.
+            window_seconds: Sliding window duration.
+            lockout_seconds: Lockout duration after threshold.
+            backend: Storage backend (default: MemoryBackend).
+            on_event: Optional callback for security events.
+        """
+        bf = object.__new__(cls)
+        bf.app = None  # type: ignore[assignment]
+        bf._severity = Severity.HIGH
+        bf._on_event = on_event or (lambda e: None)
+        bf._max_attempts = max_attempts
+        bf._window_seconds = window_seconds
+        bf._lockout_seconds = lockout_seconds
+        bf._backend = backend or MemoryBackend()
+        bf._key_func = cls._default_key_func
+        bf._lockouts: dict[str, float] = {}
+        return bf
 
     @staticmethod
     def _default_key_func(request: Request) -> str:
