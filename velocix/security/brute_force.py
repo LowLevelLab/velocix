@@ -35,13 +35,14 @@ Usage as middleware::
 Usage as utility (no middleware)::
 
     from velocix.security.brute_force import BruteForceProtection
+    from velocix.security.base import MemoryBackend
 
-    bf = BruteForceProtection.__new__(BruteForceProtection)
-    bf._max_attempts = 5
-    bf._window_seconds = 900
-    bf._lockout_seconds = 1800
-    bf._backend = MemoryBackend()
-    bf._lockouts: dict[str, float] = {}
+    bf = BruteForceProtection.create(
+        max_attempts=5,
+        window_seconds=900,
+        lockout_seconds=1800,
+        backend=MemoryBackend(),
+    )
 
     # In your login handler:
     key = f"login:{username}:{ip}"
@@ -121,6 +122,40 @@ class BruteForceProtection(SecurityMiddleware):
         self._key_func = key_func or self._default_key_func
         self._lockouts: dict[str, float] = {}
 
+    @classmethod
+    def create(
+        cls,
+        max_attempts: int = 5,
+        window_seconds: float = 900,
+        lockout_seconds: float = 1800,
+        backend: StorageBackend | None = None,
+        on_event: EventCallback | None = None,
+    ) -> "BruteForceProtection":
+        """Create a standalone BruteForceProtection instance without middleware.
+
+        Use this when you want to call ``is_locked``, ``record_failure``,
+        and ``mark_success`` directly from your handler without adding
+        middleware to the app.
+
+        Args:
+            max_attempts: Max failed attempts before lockout.
+            window_seconds: Sliding window duration.
+            lockout_seconds: Lockout duration after threshold.
+            backend: Storage backend (default: MemoryBackend).
+            on_event: Optional callback for security events.
+        """
+        bf = object.__new__(cls)
+        bf.app = None  # type: ignore[assignment]
+        bf._severity = Severity.HIGH
+        bf._on_event = on_event or (lambda e: None)
+        bf._max_attempts = max_attempts
+        bf._window_seconds = window_seconds
+        bf._lockout_seconds = lockout_seconds
+        bf._backend = backend or MemoryBackend()
+        bf._key_func = cls._default_key_func
+        bf._lockouts: dict[str, float] = {}
+        return bf
+
     @staticmethod
     def _default_key_func(request: Request) -> str:
         return _extract_source_ip(request)
@@ -188,46 +223,3 @@ class BruteForceProtection(SecurityMiddleware):
 
         return await self.app(request)
 
-
-# ---------------------------------------------------------------------------
-# StorageBackend sync wrappers for brute force counting
-# The async StorageBackend protocol is designed for middleware, but brute
-# force often needs sync access from non-async login handlers. These thin
-# wrappers run the async method in a new event loop if needed.
-# ---------------------------------------------------------------------------
-
-def _patch_backend() -> None:
-    """Add sync methods to MemoryBackend and StorageBackend implementations.
-
-    MemoryBackend operations are actually synchronous dict ops, so we can
-    call them directly. For RedisBackend, we'd need to handle async properly.
-    This patch adds ``incr_sync`` and ``reset_sync`` methods.
-    """
-    def _memory_incr_sync(self: MemoryBackend, key: str, window: float) -> int:
-        now = time.time()
-        entry = self._store.get(key)
-        if entry is None or entry[1] <= now:
-            self._store[key] = (1, now + window)
-            return 1
-        count = entry[0] + 1
-        self._store[key] = (count, entry[1])
-        return count
-
-    def _memory_reset_sync(self: MemoryBackend, key: str) -> None:
-        self._store.pop(key, None)
-
-    def _memory_get_sync(self: MemoryBackend, key: str) -> int:
-        entry = self._store.get(key)
-        if entry is None or entry[1] <= time.time():
-            return 0
-        return entry[0]
-
-    if not hasattr(MemoryBackend, "incr_sync"):
-        MemoryBackend.incr_sync = _memory_incr_sync  # type: ignore[attr-defined]
-    if not hasattr(MemoryBackend, "reset_sync"):
-        MemoryBackend.reset_sync = _memory_reset_sync  # type: ignore[attr-defined]
-    if not hasattr(MemoryBackend, "get_sync"):
-        MemoryBackend.get_sync = _memory_get_sync  # type: ignore[attr-defined]
-
-
-_patch_backend()
