@@ -1,9 +1,9 @@
 """
-CSRF protection using the Double Submit Cookie pattern.
+CSRF protection middleware using the Double Submit Cookie pattern.
 
 How it works:
-1. On any request without a CSRF cookie, set one (HMAC-signed token).
-2. On state-changing requests (POST, PUT, PATCH, DELETE), check
+1. On any request without a CSRF cookie, the middleware sets one (HMAC-signed token).
+2. On state-changing requests (POST, PUT, PATCH, DELETE), the middleware checks
    that the ``X-CSRF-Token`` header matches the ``csrf_token`` cookie.
 3. If they don't match, the request is blocked with 403.
 
@@ -17,26 +17,19 @@ Exempt:
 - Safe methods (GET, HEAD, OPTIONS, TRACE) never require a token — they only
   set the cookie if missing.
 
-Usage as middleware::
+Usage::
 
     from functools import partial
     from velocix.security.csrf import CSRFMiddleware
 
     app.add_middleware(partial(CSRFMiddleware, secret_key="your-secret"))
 
-Usage as utility (no middleware)::
-
-    from velocix.security.csrf import CSRFProtection
-
-    csrf = CSRFProtection.create(secret_key="your-secret")
-
-    # In handler — generate token to set on client:
-    token = csrf.generate_token()
-
-    # In handler — validate incoming request:
-    result = csrf.validate(cookie_token, header_token)
-    if not result.valid:
-        return JSONResponse({"error": result.error}, status_code=403)
+    # Or exempt all JSON APIs (they use JWT, not cookies):
+    app.add_middleware(partial(
+        CSRFMiddleware,
+        secret_key="your-secret",
+        exempt_content_types=["application/json"],
+    ))
 """
 
 import secrets
@@ -280,142 +273,3 @@ class CSRFMiddleware(SecurityMiddleware):
 
         # Unknown method — pass through
         return await self.app(request)
-
-
-# ---------------------------------------------------------------------------
-# Standalone CSRF utility — no middleware required
-# ---------------------------------------------------------------------------
-
-
-class ValidationResult:
-    """Result of a CSRF token validation check."""
-
-    __slots__ = ("valid", "error")
-
-    def __init__(self, valid: bool, error: str = "") -> None:
-        self.valid = valid
-        self.error = error
-
-
-class CSRFProtection:
-    """Standalone CSRF protection — generate and validate tokens without middleware.
-
-    Use this when you want CSRF protection in specific handlers rather than
-    applied globally via middleware.
-
-    Usage::
-
-        from velocix.security.csrf import CSRFProtection
-
-        csrf = CSRFProtection.create(secret_key="your-secret")
-
-        @app.get("/page")
-        async def get_page():
-            token = csrf.generate_token()
-            response = HTMLResponse(f"<form><input name=\"_csrf\" value=\"{token}\"></form>")
-            csrf.set_cookie(response, token)  # set the cookie on the response
-            return response
-
-        @app.post("/page")
-        async def post_page(request: Request):
-            cookie_token = csrf.get_token_from_cookie(request)
-            header_token = request.headers.get(b"x-csrf-token", b"").decode("latin-1")
-            result = csrf.validate(cookie_token, header_token)
-            if not result.valid:
-                return JSONResponse({"error": result.error}, status_code=403)
-            # ... process form ...
-    """
-
-    __slots__ = ("_signer", "_cookie_name", "_header_name", "_max_age")
-
-    def __init__(
-        self,
-        signer: itsdangerous.TimestampSigner,
-        cookie_name: str = _DEFAULT_COOKIE_NAME,
-        header_name: str = _DEFAULT_HEADER_NAME,
-        max_age: int | None = None,
-    ) -> None:
-        self._signer = signer
-        self._cookie_name = cookie_name
-        self._header_name = header_name
-        self._max_age = max_age
-
-    @classmethod
-    def create(
-        cls,
-        secret_key: str,
-        cookie_name: str = _DEFAULT_COOKIE_NAME,
-        header_name: str = _DEFAULT_HEADER_NAME,
-        max_age: int | None = None,
-    ) -> "CSRFProtection":
-        """Create a standalone CSRFProtection instance.
-
-        Args:
-            secret_key: HMAC signing key for tokens.
-            cookie_name: Name of the CSRF cookie.
-            header_name: Name of the header the client must send.
-            max_age: Maximum token age in seconds. None for no expiry.
-        """
-        signer = itsdangerous.TimestampSigner(secret_key)
-        return cls(signer, cookie_name, header_name, max_age)
-
-    def generate_token(self) -> str:
-        """Generate a new CSRF token."""
-        random_part = secrets.token_urlsafe(32)
-        return self._signer.sign(random_part).decode("latin-1")
-
-    def validate(self, cookie_token: str | None, header_token: str | None) -> ValidationResult:
-        """Validate that cookie and header tokens match and are valid.
-
-        Args:
-            cookie_token: Token from the CSRF cookie.
-            header_token: Token from the X-CSRF-Token header.
-
-        Returns:
-            ValidationResult with .valid=True if OK, or .error describing the failure.
-        """
-        if not cookie_token:
-            return ValidationResult(False, "CSRF cookie not set")
-
-        if not header_token:
-            return ValidationResult(False, "CSRF header not provided")
-
-        if not self._verify_token(cookie_token):
-            return ValidationResult(False, "CSRF cookie token invalid or expired")
-
-        if not self._verify_token(header_token):
-            return ValidationResult(False, "CSRF header token invalid or expired")
-
-        if cookie_token != header_token:
-            return ValidationResult(False, "CSRF token mismatch")
-
-        return ValidationResult(True)
-
-    def _verify_token(self, token: str) -> bool:
-        """Verify a single token is valid and not expired."""
-        try:
-            self._signer.unsign(token, max_age=self._max_age)
-            return True
-        except (itsdangerous.BadSignature, itsdangerous.SignatureExpired):
-            return False
-
-    def get_token_from_cookie(self, request: Request) -> str | None:
-        """Extract the CSRF token from the request's cookie header."""
-        for k, v in request.scope.get("headers", []):
-            if k == b"cookie":
-                for part in v.decode("latin-1").split(";"):
-                    part = part.strip()
-                    if part.startswith(f"{self._cookie_name}="):
-                        return part.split("=", 1)[1]
-                break
-        return None
-
-    def set_cookie(self, response: Response, token: str) -> None:
-        """Set the CSRF cookie on a response."""
-        response.raw_headers.append((
-            b"set-cookie",
-            (
-                f"{self._cookie_name}={token}; "
-                f"Path=/; SameSite=lax; HttpOnly"
-            ).encode("latin-1"),
-        ))

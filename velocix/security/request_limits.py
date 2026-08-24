@@ -7,8 +7,6 @@ request cycle — before body is read, before handler runs.
 
 Limits enforced:
 - **Body size**: ``Content-Length`` header checked before body is consumed.
-  For chunked transfers (no Content-Length), wraps ``receive`` to count
-  bytes as they arrive and disconnects when the limit is exceeded.
   Returns 413 Payload Too Large.
 - **Header count**: Number of request headers. Returns 431 Request Header
   Fields Too Large.
@@ -17,7 +15,7 @@ Limits enforced:
 
 All limits are configurable. Set to ``None`` to disable that check.
 
-Usage as middleware::
+Usage::
 
     from functools import partial
     from velocix.security.request_limits import RequestLimitsMiddleware
@@ -29,16 +27,6 @@ Usage as middleware::
         max_header_size=8192,              # 8 KB
         max_url_length=2048,
     ))
-
-Usage as utility (no middleware)::
-
-    from velocix.security.request_limits import RequestLimits
-
-    limits = RequestLimits.create(max_body_size=10 * 1024 * 1024)
-
-    result = limits.check(request.scope)
-    if not result.ok:
-        return JSONResponse({"error": result.error}, status_code=result.status_code)
 """
 
 from collections.abc import Awaitable, Callable
@@ -104,7 +92,6 @@ class RequestLimitsMiddleware(SecurityMiddleware):
             source_ip = str(client[0])
 
         path = request.scope.get("path", "")
-        method = request.scope.get("method", "GET").upper()
         headers = request.scope.get("headers", [])
 
         # 1. Header count
@@ -180,161 +167,4 @@ class RequestLimitsMiddleware(SecurityMiddleware):
                         pass
                     break
 
-        # 5. Streaming body size enforcement for chunked transfers
-        #    When there's no Content-Length, wrap receive to count bytes
-        #    as they arrive and disconnect when limit is exceeded.
-        if self._max_body_size is not None:
-            has_content_length = any(k == b"content-length" for k, _ in headers)
-            if not has_content_length and method in ("POST", "PUT", "PATCH", "DELETE"):
-                original_receive = request._receive
-                accumulated = 0
-                max_size = self._max_body_size
-
-                async def _counting_receive() -> dict[str, Any]:
-                    nonlocal accumulated
-                    msg = await original_receive()
-                    if msg["type"] == "http.request":
-                        body = msg.get("body", b"")
-                        accumulated += len(body)
-                        if accumulated > max_size:
-                            self.emit(
-                                "REQUEST_BODY_TOO_LARGE",
-                                source_ip=source_ip,
-                                path=path,
-                                detail=f"Streaming body size {accumulated} bytes exceeds limit {max_size}",
-                                metadata={"body_size": accumulated, "limit": max_size},
-                            )
-                            return {"type": "http.disconnect"}
-                    return msg
-
-                request._receive = _counting_receive
-
         return await self.app(request)
-
-
-# ---------------------------------------------------------------------------
-# Standalone request limits utility — no middleware required
-# ---------------------------------------------------------------------------
-
-
-class LimitCheckResult:
-    """Result of a request limits check."""
-
-    __slots__ = ("ok", "error", "status_code", "code")
-
-    def __init__(
-        self, ok: bool, error: str = "", status_code: int = 200, code: str = ""
-    ) -> None:
-        self.ok = ok
-        self.error = error
-        self.status_code = status_code
-        self.code = code
-
-
-class RequestLimits:
-    """Standalone request limits — check request scope without middleware.
-
-    Use this when you want to enforce limits in specific handlers rather than
-    applied globally via middleware.
-
-    Usage::
-
-        from velocix.security.request_limits import RequestLimits
-
-        limits = RequestLimits.create(max_body_size=5 * 1024 * 1024)
-
-        @app.post("/upload")
-        async def upload(request: Request):
-            result = limits.check(request.scope)
-            if not result.ok:
-                return JSONResponse({"error": result.error}, status_code=result.status_code)
-            # ... process upload ...
-    """
-
-    __slots__ = ("_max_body_size", "_max_headers", "_max_header_size", "_max_url_length")
-
-    def __init__(
-        self,
-        max_body_size: int | None = DEFAULT_MAX_BODY_SIZE,
-        max_headers: int | None = DEFAULT_MAX_HEADERS,
-        max_header_size: int | None = DEFAULT_MAX_HEADER_SIZE,
-        max_url_length: int | None = DEFAULT_MAX_URL_LENGTH,
-    ) -> None:
-        self._max_body_size = max_body_size
-        self._max_headers = max_headers
-        self._max_header_size = max_header_size
-        self._max_url_length = max_url_length
-
-    @classmethod
-    def create(
-        cls,
-        max_body_size: int | None = DEFAULT_MAX_BODY_SIZE,
-        max_headers: int | None = DEFAULT_MAX_HEADERS,
-        max_header_size: int | None = DEFAULT_MAX_HEADER_SIZE,
-        max_url_length: int | None = DEFAULT_MAX_URL_LENGTH,
-    ) -> "RequestLimits":
-        """Create a standalone RequestLimits instance."""
-        return cls(max_body_size, max_headers, max_header_size, max_url_length)
-
-    def check(self, scope: dict[str, Any]) -> LimitCheckResult:
-        """Check a request scope against all configured limits.
-
-        Args:
-            scope: ASGI request scope dict.
-
-        Returns:
-            LimitCheckResult with .ok=True if all checks pass.
-        """
-        path = scope.get("path", "")
-        headers = scope.get("headers", [])
-
-        # Header count
-        if self._max_headers is not None and len(headers) > self._max_headers:
-            return LimitCheckResult(
-                False,
-                f"Too many headers ({len(headers)} > {self._max_headers})",
-                431,
-                "REQUEST_HEADERS_TOO_MANY",
-            )
-
-        # Total header size
-        if self._max_header_size is not None:
-            total_size = sum(len(k) + len(v) for k, v in headers)
-            if total_size > self._max_header_size:
-                return LimitCheckResult(
-                    False,
-                    f"Headers too large ({total_size} > {self._max_header_size} bytes)",
-                    431,
-                    "REQUEST_HEADERS_TOO_LARGE",
-                )
-
-        # URL length
-        if self._max_url_length is not None:
-            query_string = scope.get("query_string", b"")
-            url_length = len(path.encode("utf-8")) + len(query_string)
-            if url_length > self._max_url_length:
-                return LimitCheckResult(
-                    False,
-                    f"URI too long ({url_length} > {self._max_url_length} bytes)",
-                    414,
-                    "REQUEST_URI_TOO_LONG",
-                )
-
-        # Body size (Content-Length)
-        if self._max_body_size is not None:
-            for k, v in headers:
-                if k == b"content-length":
-                    try:
-                        content_length = int(v.decode("latin-1"))
-                        if content_length > self._max_body_size:
-                            return LimitCheckResult(
-                                False,
-                                f"Body too large ({content_length} > {self._max_body_size} bytes)",
-                                413,
-                                "REQUEST_BODY_TOO_LARGE",
-                            )
-                    except (ValueError, UnicodeDecodeError):
-                        pass
-                    break
-
-        return LimitCheckResult(True)

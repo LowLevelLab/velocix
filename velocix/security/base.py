@@ -255,9 +255,6 @@ class MemoryBackend:
     Safe under async concurrency because incr/get/reset are synchronous
     dict operations — no ``await`` between read and write, so no coroutine
     switch can occur mid-operation within a single event-loop tick.
-
-    Also provides sync methods (``incr_sync``, ``get_sync``, ``reset_sync``)
-    for use from non-async code like brute force login handlers.
     """
 
     __slots__ = ("_store",)
@@ -265,8 +262,7 @@ class MemoryBackend:
     def __init__(self) -> None:
         self._store: dict[str, tuple[int, float]] = {}
 
-    def _incr_impl(self, key: str, window: float) -> int:
-        """Core incr logic shared by async and sync methods."""
+    async def incr(self, key: str, window: float) -> int:
         now = time.time()
         entry = self._store.get(key)
         if entry is None or entry[1] <= now:
@@ -276,37 +272,14 @@ class MemoryBackend:
         self._store[key] = (count, entry[1])
         return count
 
-    def _get_impl(self, key: str) -> int:
-        """Core get logic shared by async and sync methods."""
+    async def get(self, key: str) -> int:
         entry = self._store.get(key)
         if entry is None or entry[1] <= time.time():
             return 0
         return entry[0]
 
-    def _reset_impl(self, key: str) -> None:
-        """Core reset logic shared by async and sync methods."""
-        self._store.pop(key, None)
-
-    async def incr(self, key: str, window: float) -> int:
-        return self._incr_impl(key, window)
-
-    async def get(self, key: str) -> int:
-        return self._get_impl(key)
-
     async def reset(self, key: str) -> None:
-        self._reset_impl(key)
-
-    def incr_sync(self, key: str, window: float) -> int:
-        """Synchronous incr for use from non-async code."""
-        return self._incr_impl(key, window)
-
-    def get_sync(self, key: str) -> int:
-        """Synchronous get for use from non-async code."""
-        return self._get_impl(key)
-
-    def reset_sync(self, key: str) -> None:
-        """Synchronous reset for use from non-async code."""
-        self._reset_impl(key)
+        self._store.pop(key, None)
 
 
 class RedisBackend:
