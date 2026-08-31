@@ -1,7 +1,7 @@
 import asyncio
 from typing import Annotated
 
-from velocix import Cookie, Header, Query, TestClient, Velocix
+from velocix import Query, TestClient, Velocix
 from velocix.core.depends import Depends
 from velocix.core.exceptions import HTTPException
 

@@ -1,11 +1,10 @@
-"""Tests for brute force protection middleware and standalone utility.
+"""Tests for brute force protection middleware.
 
 Covers: record_failure, mark_success, is_locked, get_retry_after,
-middleware lockout, create() factory, separate key tracking.
+middleware lockout, separate key tracking.
 """
 
 import asyncio
-import time
 from functools import partial
 
 from velocix import TestClient, Velocix
@@ -17,35 +16,32 @@ def _run(coro):
     return asyncio.run(coro)
 
 
-# ---------------------------------------------------------------------------
-# BruteForceProtection standalone — create() factory
-# ---------------------------------------------------------------------------
+async def _passthrough_app(request):
+    from velocix.core.response import Response
+
+    return Response(b"ok", status_code=200)
 
 
-def test_create_factory():
-    bf = BruteForceProtection.create(
-        max_attempts=3,
-        window_seconds=60,
-        lockout_seconds=120,
-    )
-    assert bf._max_attempts == 3
-    assert bf._window_seconds == 60
-    assert bf._lockout_seconds == 120
+def _make_bf(**kwargs):
+    """Build a BruteForceProtection instance for direct method testing,
+    without going through a Velocix app or the request-handling path."""
+    return BruteForceProtection(_passthrough_app, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# BruteForceProtection — record_failure / is_locked / mark_success
+# ---------------------------------------------------------------------------
 
 
 def test_record_failure_increments():
-    bf = BruteForceProtection.create(max_attempts=5, window_seconds=60)
+    bf = _make_bf(max_attempts=5, window_seconds=60)
     assert bf.record_failure("user:1.2.3.4") == 1
     assert bf.record_failure("user:1.2.3.4") == 2
     assert bf.record_failure("user:1.2.3.4") == 3
 
 
 def test_is_locked_after_threshold():
-    bf = BruteForceProtection.create(
-        max_attempts=3,
-        window_seconds=60,
-        lockout_seconds=120,
-    )
+    bf = _make_bf(max_attempts=3, window_seconds=60, lockout_seconds=120)
     bf.record_failure("user:1")
     bf.record_failure("user:1")
     assert bf.is_locked("user:1") is False  # 2 < 3
@@ -54,16 +50,12 @@ def test_is_locked_after_threshold():
 
 
 def test_is_locked_returns_false_for_unknown_key():
-    bf = BruteForceProtection.create(max_attempts=3, window_seconds=60)
+    bf = _make_bf(max_attempts=3, window_seconds=60)
     assert bf.is_locked("unknown") is False
 
 
 def test_mark_success_resets():
-    bf = BruteForceProtection.create(
-        max_attempts=3,
-        window_seconds=60,
-        lockout_seconds=120,
-    )
+    bf = _make_bf(max_attempts=3, window_seconds=60, lockout_seconds=120)
     bf.record_failure("user:1")
     bf.record_failure("user:1")
     bf.record_failure("user:1")
@@ -73,11 +65,7 @@ def test_mark_success_resets():
 
 
 def test_mark_success_clears_counter():
-    bf = BruteForceProtection.create(
-        max_attempts=3,
-        window_seconds=60,
-        lockout_seconds=120,
-    )
+    bf = _make_bf(max_attempts=3, window_seconds=60, lockout_seconds=120)
     bf.record_failure("user:1")
     bf.record_failure("user:1")
     bf.mark_success("user:1")
@@ -90,11 +78,7 @@ def test_mark_success_clears_counter():
 
 
 def test_get_retry_after():
-    bf = BruteForceProtection.create(
-        max_attempts=2,
-        window_seconds=60,
-        lockout_seconds=300,
-    )
+    bf = _make_bf(max_attempts=2, window_seconds=60, lockout_seconds=300)
     assert bf.get_retry_after("user:1") == 0  # not locked
     bf.record_failure("user:1")
     bf.record_failure("user:1")
@@ -102,11 +86,7 @@ def test_get_retry_after():
 
 
 def test_separate_keys_independent():
-    bf = BruteForceProtection.create(
-        max_attempts=2,
-        window_seconds=60,
-        lockout_seconds=120,
-    )
+    bf = _make_bf(max_attempts=2, window_seconds=60, lockout_seconds=120)
     bf.record_failure("user:A")
     bf.record_failure("user:A")
     assert bf.is_locked("user:A") is True
@@ -114,18 +94,13 @@ def test_separate_keys_independent():
 
 
 # ---------------------------------------------------------------------------
-# BruteForceProtection standalone — custom backend
+# BruteForceProtection — custom backend
 # ---------------------------------------------------------------------------
 
 
-def test_create_with_custom_backend():
+def test_custom_backend():
     backend = MemoryBackend()
-    bf = BruteForceProtection.create(
-        max_attempts=2,
-        window_seconds=60,
-        lockout_seconds=60,
-        backend=backend,
-    )
+    bf = _make_bf(max_attempts=2, window_seconds=60, lockout_seconds=60, backend=backend)
     bf.record_failure("test")
     bf.record_failure("test")
     assert bf.is_locked("test") is True
@@ -165,16 +140,35 @@ def test_middleware_allows_unlocked_requests():
 
 
 def test_middleware_blocks_locked_ip():
-    app = _app_with_brute_force(max_attempts=2, window_seconds=60, lockout_seconds=120)
-
     async def scenario():
-        async with TestClient(app) as client:
-            # The test client has a fixed IP, so all requests share the same key
-            # We need to trigger lockout via the utility methods
-            # But middleware runs on every request... let's just test the utility
-            # and verify middleware doesn't interfere with clean requests
-            resp = await client.get("/ping")
-            assert resp.status_code == 200
+        from velocix.core.request import Request
+
+        middleware = BruteForceProtection(
+            _passthrough_app, max_attempts=2, window_seconds=60, lockout_seconds=120
+        )
+
+        scope = {
+            "type": "http",
+            "method": "GET",
+            "path": "/ping",
+            "query_string": b"",
+            "headers": [],
+            "server": ("test", 80),
+            "client": ("testclient", 50000),
+        }
+        request = Request(scope, receive=None)
+
+        # Lock the key directly (this is the same IP TestClient/the request
+        # scope above resolves to via the default IP-based key_func)
+        middleware.record_failure("testclient")
+        middleware.record_failure("testclient")
+
+        resp = await middleware(request)
+        assert resp.status_code == 429
+        import orjson
+
+        body = orjson.loads(resp.body)
+        assert body["error"]["code"] == "BRUTE_FORCE_LOCKED"
 
     _run(scenario())
 

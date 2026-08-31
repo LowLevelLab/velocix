@@ -5,7 +5,6 @@ incr/get/reset (async + sync), and HookManager priority ordering.
 """
 
 import asyncio
-import time
 
 from velocix.security.base import (
     HookManager,
@@ -207,7 +206,7 @@ def test_memory_backend_sync_matches_async():
         async_backend = MemoryBackend()
         sync_backend = MemoryBackend()
 
-        for i in range(5):
+        for _i in range(5):
             async_result = await async_backend.incr("key1", window=60.0)
             sync_result = sync_backend.incr_sync("key1", window=60.0)
             assert async_result == sync_result

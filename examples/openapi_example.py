@@ -9,9 +9,9 @@ This example demonstrates proper parameter categorization following OpenAPI 3.0 
 Following FastAPI's approach for automatic OpenAPI generation.
 """
 from velocix import Velocix
-from velocix.validation import Struct, field
 from velocix.core.depends import Depends
 from velocix.openapi import enable_auto_docs
+from velocix.validation import Struct
 
 
 # Data models using msgspec Struct (Velocix's validation system)

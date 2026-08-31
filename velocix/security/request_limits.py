@@ -30,11 +30,10 @@ Usage::
 """
 
 from collections.abc import Awaitable, Callable
-from typing import Any
 
 from velocix.core.request import Request
 from velocix.core.response import Response
-from velocix.security.base import EventCallback, Severity, SecurityMiddleware
+from velocix.security.base import EventCallback, SecurityMiddleware, Severity
 
 # Default limits
 DEFAULT_MAX_BODY_SIZE = 10 * 1024 * 1024  # 10 MB

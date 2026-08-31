@@ -26,7 +26,7 @@ import nh3
 
 from velocix.core.request import Request
 from velocix.core.response import Response
-from velocix.security.base import EventCallback, Severity, SecurityMiddleware
+from velocix.security.base import EventCallback, SecurityMiddleware, Severity
 
 
 class SanitizeAction(Enum):
@@ -299,7 +299,7 @@ class InputSanitizationMiddleware(SecurityMiddleware):
                 if "=" in part:
                     _, value = part.split("=", 1)
                     value_decoded = _url_decode(value)
-                    if detect_sqli(value_decoded) and f"sqli_in_query:_qs" not in violations:
+                    if detect_sqli(value_decoded) and "sqli_in_query:_qs" not in violations:
                         violations.append("sqli_in_query:_qs")
 
         # 5. Body scanning (flag only, never modify)

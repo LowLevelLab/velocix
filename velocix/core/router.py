@@ -18,6 +18,14 @@ class HandlerProtocol(Protocol):
 
 
 @dataclass
+class RouteMetrics:
+    """Per-route hit tracking, only attached when Router(metrics_enabled=True)"""
+
+    hit_count: int = 0
+    cache_hits: int = 0
+
+
+@dataclass
 class CachedRoute:
     """Cached route with TTL"""
 
@@ -26,6 +34,7 @@ class CachedRoute:
     created_at: float = field(default_factory=time.time)
     ttl: float = 300.0  # 5 minutes
     version: int = 0
+    metrics: RouteMetrics | None = None
 
     def is_valid(self) -> bool:
         return time.time() - self.created_at < self.ttl
@@ -303,6 +312,8 @@ class Router:
         if by_method is not None:
             cached = by_method.get(path)
             if cached is not None and cached.version == self._routes_version:
+                    if self.metrics_enabled and cached.metrics is not None:
+                        cached.metrics.cache_hits += 1
                     return cached.handler, cached.params
 
         # Check static routes first (fastest path)
@@ -370,6 +381,7 @@ class Router:
                 handler,
                 params.copy(),
                 version=self._routes_version,
+                metrics=RouteMetrics(hit_count=1) if self.metrics_enabled else None,
             )
 
             return handler, params
@@ -427,9 +439,25 @@ class Router:
         self.middleware_stack.append(middleware)
 
     def get_metrics(self) -> dict[str, Any]:
-        """Get router performance metrics"""
+        """Get router performance metrics.
+
+        total_routes counts static routes only (dynamic routes are tracked
+        per-entry via CachedRoute.metrics once resolved, not by registration
+        count). cache_hit_rate is 0 when metrics are disabled or no dynamic
+        route has been resolved yet.
+        """
+        total_hits = 0
+        total_cache_hits = 0
+        for routes in self.route_cache.values():
+            for cached in routes.values():
+                if cached.metrics is not None:
+                    total_hits += cached.metrics.hit_count
+                    total_cache_hits += cached.metrics.cache_hits
+
+        denom = total_hits + total_cache_hits
         return {
-            "total_routes": len(self._registered),
+            "total_routes": sum(len(routes) for routes in self.static_routes.values()),
             "cache_size": sum(len(routes) for routes in self.route_cache.values()),
+            "cache_hit_rate": (total_cache_hits / denom) if denom else 0,
         }
 
