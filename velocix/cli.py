@@ -154,7 +154,10 @@ def run(
     # Note: 'threads' parameter was removed in newer granian versions
     # Use 'blocking_threads' instead for thread pool size
 
-    server = Granian(**granian_params)
+    # granian_params is built conditionally (blocking_threads is optional), so
+    # mypy can't match a plain dict[str, object] against Granian's many
+    # distinct keyword-argument types.
+    server = Granian(**granian_params)  # type: ignore[arg-type]
 
     try:
         server.serve()
