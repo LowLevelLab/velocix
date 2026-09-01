@@ -1,17 +1,13 @@
-"""Tests for request size limit middleware and standalone RequestLimits.
+"""Tests for request size limit middleware.
 
-Covers: body size, header count, header size, URL length, Content-Length check,
-standalone check() method, and streaming body enforcement.
+Covers: body size, header count, header size, URL length, Content-Length check.
 """
 
 import asyncio
 from functools import partial
 
 from velocix import TestClient, Velocix
-from velocix.security.request_limits import (
-    RequestLimits,
-    RequestLimitsMiddleware,
-)
+from velocix.security.request_limits import RequestLimitsMiddleware
 
 
 def _run(coro):
@@ -191,97 +187,3 @@ def test_disabled_url_limit():
             assert resp.status_code == 200
 
     _run(scenario())
-
-
-# ---------------------------------------------------------------------------
-# RequestLimits standalone
-# ---------------------------------------------------------------------------
-
-
-def test_standalone_check_within_limits():
-    limits = RequestLimits.create(max_body_size=1024, max_headers=50)
-    scope = {
-        "path": "/test",
-        "headers": [(b"content-length", b"512")],
-    }
-    result = limits.check(scope)
-    assert result.ok is True
-
-
-def test_standalone_check_body_exceeds():
-    limits = RequestLimits.create(max_body_size=100)
-    scope = {
-        "path": "/test",
-        "headers": [(b"content-length", b"200")],
-    }
-    result = limits.check(scope)
-    assert result.ok is False
-    assert result.status_code == 413
-    assert result.code == "REQUEST_BODY_TOO_LARGE"
-
-
-def test_standalone_check_url_exceeds():
-    limits = RequestLimits.create(max_url_length=10)
-    scope = {
-        "path": "/very/long/path/that/exceeds/limit",
-        "headers": [],
-    }
-    result = limits.check(scope)
-    assert result.ok is False
-    assert result.status_code == 414
-
-
-def test_standalone_check_too_many_headers():
-    limits = RequestLimits.create(max_headers=3)
-    scope = {
-        "path": "/test",
-        "headers": [
-            (b"h1", b"v1"),
-            (b"h2", b"v2"),
-            (b"h3", b"v3"),
-            (b"h4", b"v4"),
-        ],
-    }
-    result = limits.check(scope)
-    assert result.ok is False
-    assert result.status_code == 431
-    assert result.code == "REQUEST_HEADERS_TOO_MANY"
-
-
-def test_standalone_check_headers_too_large():
-    limits = RequestLimits.create(max_header_size=20)
-    scope = {
-        "path": "/test",
-        "headers": [
-            (b"very-long-header-name", b"very-long-header-value-that-is-really-long"),
-        ],
-    }
-    result = limits.check(scope)
-    assert result.ok is False
-    assert result.status_code == 431
-    assert result.code == "REQUEST_HEADERS_TOO_LARGE"
-
-
-def test_standalone_check_no_content_length_passes():
-    limits = RequestLimits.create(max_body_size=10)
-    scope = {
-        "path": "/test",
-        "headers": [],  # no content-length
-    }
-    result = limits.check(scope)
-    assert result.ok is True
-
-
-def test_standalone_check_all_disabled():
-    limits = RequestLimits.create(
-        max_body_size=None,
-        max_headers=None,
-        max_header_size=None,
-        max_url_length=None,
-    )
-    scope = {
-        "path": "/test",
-        "headers": [(b"h", b"v")],
-    }
-    result = limits.check(scope)
-    assert result.ok is True

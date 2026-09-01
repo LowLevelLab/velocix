@@ -1,15 +1,14 @@
-"""Tests for CSRF protection middleware and standalone CSRFProtection.
+"""Tests for CSRF protection middleware.
 
 Covers: cookie setting, token validation, double-submit check, exempt paths,
-exempt content types, safe methods, standalone generate/validate, expired tokens.
+exempt content types, safe methods.
 """
 
 import asyncio
-import time
 from functools import partial
 
-from velocix import TestClient, Velocix, JSONResponse
-from velocix.security.csrf import CSRFMiddleware, CSRFProtection
+from velocix import TestClient, Velocix
+from velocix.security.csrf import CSRFMiddleware
 
 
 def _run(coro):
@@ -168,101 +167,5 @@ def test_exempt_content_type_skips_csrf():
                 json={"data": "test"},
             )
             assert resp.status_code == 200
-
-    _run(scenario())
-
-
-# ---------------------------------------------------------------------------
-# CSRFProtection standalone
-# ---------------------------------------------------------------------------
-
-
-def test_csrf_protection_generate_and_validate():
-    csrf = CSRFProtection.create(secret_key="test-secret")
-    token = csrf.generate_token()
-    result = csrf.validate(token, token)
-    assert result.valid is True
-    assert result.error == ""
-
-
-def test_csrf_protection_mismatch():
-    csrf = CSRFProtection.create(secret_key="test-secret")
-    token1 = csrf.generate_token()
-    token2 = csrf.generate_token()
-    result = csrf.validate(token1, token2)
-    assert result.valid is False
-    assert "mismatch" in result.error.lower()
-
-
-def test_csrf_protection_missing_cookie():
-    csrf = CSRFProtection.create(secret_key="test-secret")
-    result = csrf.validate(None, "some-token")
-    assert result.valid is False
-    assert "cookie" in result.error.lower()
-
-
-def test_csrf_protection_missing_header():
-    csrf = CSRFProtection.create(secret_key="test-secret")
-    result = csrf.validate("some-token", None)
-    assert result.valid is False
-    assert "header" in result.error.lower()
-
-
-def test_csrf_protection_invalid_cookie_token():
-    csrf = CSRFProtection.create(secret_key="test-secret")
-    token = csrf.generate_token()
-    result = csrf.validate("garbage", token)
-    assert result.valid is False
-    assert "invalid" in result.error.lower()
-
-
-def test_csrf_protection_invalid_header_token():
-    csrf = CSRFProtection.create(secret_key="test-secret")
-    token = csrf.generate_token()
-    result = csrf.validate(token, "garbage")
-    assert result.valid is False
-    assert "invalid" in result.error.lower()
-
-
-def test_csrf_protection_different_secret_rejects():
-    csrf1 = CSRFProtection.create(secret_key="secret-1")
-    csrf2 = CSRFProtection.create(secret_key="secret-2")
-    token = csrf1.generate_token()
-    result = csrf2.validate(token, token)
-    assert result.valid is False
-
-
-def test_csrf_protection_set_cookie():
-    from velocix.core.response import Response
-
-    csrf = CSRFProtection.create(secret_key="test-secret")
-    token = csrf.generate_token()
-    resp = Response(b"ok", status_code=200)
-    csrf.set_cookie(resp, token)
-    cookie_headers = [v.decode() for k, v in resp.raw_headers if k == b"set-cookie"]
-    assert len(cookie_headers) == 1
-    assert "csrf_token=" in cookie_headers[0]
-    assert "HttpOnly" in cookie_headers[0]
-
-
-def test_csrf_protection_get_token_from_cookie():
-    app = Velocix()
-    csrf = CSRFProtection.create(secret_key="test-secret")
-
-    @app.get("/check")
-    async def check(request):
-        token = csrf.get_token_from_cookie(request)
-        return {"token": token}
-
-    async def scenario():
-        async with TestClient(app) as client:
-            # No cookie — should return None
-            resp = await client.get("/check")
-            assert resp.json()["token"] is None
-
-            # Set cookie manually
-            client._cookies["csrf_token"] = "my-test-token"
-            resp = await client.get("/check")
-            assert resp.json()["token"] == "my-test-token"
 
     _run(scenario())

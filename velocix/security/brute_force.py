@@ -54,16 +54,15 @@ Usage as utility (no middleware)::
 
 import time
 from collections.abc import Awaitable, Callable
-from typing import Any
 
 from velocix.core.request import Request
 from velocix.core.response import Response
 from velocix.security.base import (
     EventCallback,
     MemoryBackend,
+    SecurityMiddleware,
     Severity,
     StorageBackend,
-    SecurityMiddleware,
 )
 
 

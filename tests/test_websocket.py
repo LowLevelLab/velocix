@@ -2,7 +2,7 @@ import asyncio
 
 from velocix import Velocix
 from velocix.testing.client import TestClient
-from velocix.websocket.connection import WebSocket, WebSocketDisconnect, WebSocketManager
+from velocix.websocket.connection import WebSocket, WebSocketManager
 
 
 def _run(coro):
@@ -240,7 +240,7 @@ def test_websocket_close_is_idempotent():
 
     async def scenario():
         async with TestClient(app) as client:
-            ws = await client.websocket_connect("/ws")
+            await client.websocket_connect("/ws")
             await asyncio.sleep(0.05)
 
     _run(scenario())

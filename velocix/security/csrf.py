@@ -33,16 +33,13 @@ Usage::
 """
 
 import secrets
-import time
 from collections.abc import Awaitable, Callable
-from typing import Any
 
 import itsdangerous
 
 from velocix.core.request import Request
 from velocix.core.response import Response
-from velocix.security.base import EventCallback, Severity, SecurityMiddleware
-
+from velocix.security.base import EventCallback, SecurityMiddleware, Severity
 
 _DEFAULT_COOKIE_NAME = "csrf_token"
 _DEFAULT_HEADER_NAME = "x-csrf-token"

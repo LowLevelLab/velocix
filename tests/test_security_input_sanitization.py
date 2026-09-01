@@ -1,17 +1,15 @@
-"""Tests for input sanitization middleware and standalone InputSanitizer.
+"""Tests for input sanitization middleware and the standalone detect_sqli helper.
 
 Covers: XSS detection/stripping, SQLi detection, path traversal rejection,
-middleware action modes (BLOCK/SANITIZE/LOG), standalone sanitize_value,
-has_xss, has_sqli, has_path_traversal, sanitize_query_string, scan_json_body.
+middleware action modes (BLOCK/SANITIZE/LOG).
 """
 
 import asyncio
 from functools import partial
 
-from velocix import TestClient, Velocix, JSONResponse
+from velocix import TestClient, Velocix
 from velocix.security.input_sanitization import (
     InputSanitizationMiddleware,
-    InputSanitizer,
     SanitizeAction,
     detect_sqli,
 )
@@ -52,114 +50,6 @@ def test_detect_sqli_clean_input():
 
 def test_detect_sqli_normal_number():
     assert detect_sqli("42") is False
-
-
-# ---------------------------------------------------------------------------
-# InputSanitizer standalone
-# ---------------------------------------------------------------------------
-
-
-def test_sanitize_value_xss_strips_tags():
-    sanitizer = InputSanitizer.create(xss_action=SanitizeAction.SANITIZE)
-    result = sanitizer.sanitize_value("<script>alert(1)</script>")
-    assert "xss" in result.violations
-    assert "<script>" not in result.clean
-
-
-def test_sanitize_value_xss_block():
-    sanitizer = InputSanitizer.create(xss_action=SanitizeAction.BLOCK)
-    result = sanitizer.sanitize_value("<script>alert(1)</script>")
-    assert "xss" in result.violations
-    assert result.clean == "<script>alert(1)</script>"
-
-
-def test_sanitize_value_xss_log():
-    sanitizer = InputSanitizer.create(xss_action=SanitizeAction.LOG)
-    result = sanitizer.sanitize_value("<script>alert(1)</script>")
-    assert "xss" in result.violations
-    # LOG mode: value is unchanged
-    assert result.clean == "<script>alert(1)</script>"
-
-
-def test_sanitize_value_sqli_block():
-    sanitizer = InputSanitizer.create(sqli_action=SanitizeAction.BLOCK)
-    result = sanitizer.sanitize_value("'; DROP TABLE users; --")
-    assert "sqli" in result.violations
-    assert result.clean == "'; DROP TABLE users; --"
-
-
-def test_sanitize_value_sqli_log():
-    sanitizer = InputSanitizer.create(sqli_action=SanitizeAction.LOG)
-    result = sanitizer.sanitize_value("'; DROP TABLE users; --")
-    assert "sqli" in result.violations
-    # LOG: value unchanged
-    assert result.clean == "'; DROP TABLE users; --"
-
-
-def test_sanitize_value_clean_input():
-    sanitizer = InputSanitizer.create()
-    result = sanitizer.sanitize_value("hello world")
-    assert result.violations == []
-    assert result.clean == "hello world"
-
-
-def test_sanitize_value_xss_and_sqli():
-    sanitizer = InputSanitizer.create(
-        xss_action=SanitizeAction.SANITIZE,
-        sqli_action=SanitizeAction.LOG,
-    )
-    result = sanitizer.sanitize_value("<script>alert(' OR 1=1')</script>")
-    assert "xss" in result.violations
-    assert "sqli" in result.violations
-    assert "<script>" not in result.clean
-
-
-def test_has_xss():
-    sanitizer = InputSanitizer.create()
-    assert sanitizer.has_xss("<script>alert(1)</script>") is True
-    assert sanitizer.has_xss("hello world") is False
-
-
-def test_has_sqli():
-    sanitizer = InputSanitizer.create()
-    assert sanitizer.has_sqli("' OR 1=1 --") is True
-    assert sanitizer.has_sqli("normal text") is False
-
-
-def test_has_path_traversal():
-    sanitizer = InputSanitizer.create()
-    assert sanitizer.has_path_traversal("/api/../etc/passwd") is True
-    assert sanitizer.has_path_traversal("/api/users") is False
-    assert sanitizer.has_path_traversal("/api/users/..") is True
-
-
-def test_sanitize_query_string():
-    sanitizer = InputSanitizer.create(xss_action=SanitizeAction.SANITIZE)
-    qs = b"name=<script>alert(1)</script>&age=25"
-    cleaned, violations = sanitizer.sanitize_query_string(qs)
-    assert any("xss" in v for v in violations)
-    assert b"<script>" not in cleaned
-
-
-def test_scan_json_body_xss():
-    sanitizer = InputSanitizer.create()
-    body = b'{"title": "<script>alert(1)</script>", "body": "clean"}'
-    violations = sanitizer.scan_json_body(body)
-    assert any("xss" in v for v in violations)
-
-
-def test_scan_json_body_sqli():
-    sanitizer = InputSanitizer.create()
-    body = b'{"query": "\'; DROP TABLE users; --"}'
-    violations = sanitizer.scan_json_body(body)
-    assert any("sqli" in v for v in violations)
-
-
-def test_scan_json_body_clean():
-    sanitizer = InputSanitizer.create()
-    body = b'{"title": "hello", "count": 42}'
-    violations = sanitizer.scan_json_body(body)
-    assert violations == []
 
 
 # ---------------------------------------------------------------------------

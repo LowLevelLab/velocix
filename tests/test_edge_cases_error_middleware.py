@@ -1,10 +1,8 @@
 import asyncio
 from functools import partial
 
-import msgspec
-
 from velocix import CORSMiddleware, TestClient, Velocix
-from velocix.core.exceptions import HTTPException, NotFound
+from velocix.core.exceptions import HTTPException
 from velocix.core.middleware import BaseHTTPMiddleware
 from velocix.core.response import JSONResponse, Response
 
