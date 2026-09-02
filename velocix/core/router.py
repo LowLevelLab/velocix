@@ -6,15 +6,9 @@ import time
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Optional, Protocol
+from typing import Any, Optional
 
 from .exceptions import MethodNotAllowed, NotFound
-
-
-class HandlerProtocol(Protocol):
-    """Protocol for route handlers"""
-
-    def __call__(self, *args: Any, **kwargs: Any) -> Any: ...
 
 
 @dataclass
@@ -77,7 +71,6 @@ class Router:
             "WEBSOCKET": RouteNode(),
         }
         self.static_routes: dict[str, dict[str, Callable]] = defaultdict(dict)
-        self.dynamic_patterns: list[tuple] = []
         self.middleware_stack: list[Callable] = []
         # Flat (method, path, handler, name) registration log for include_router
         self._registered: list[tuple[str, str, Callable, str | None]] = []

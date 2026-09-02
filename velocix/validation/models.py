@@ -153,19 +153,3 @@ class BaseModel(msgspec.Struct):
         current.update(changes)
         return self.from_dict(current)
 
-
-def create_model(name: str, **field_definitions: Any) -> type[msgspec.Struct]:
-    """Dynamically create a msgspec Struct model"""
-    annotations = {}
-    defaults = {}
-
-    for field_name, field_type in field_definitions.items():
-        if isinstance(field_type, tuple):
-            annotations[field_name] = field_type[0]
-            defaults[field_name] = field_type[1]
-        else:
-            annotations[field_name] = field_type
-
-    namespace = {"__annotations__": annotations, **defaults}
-
-    return type(name, (msgspec.Struct,), namespace)

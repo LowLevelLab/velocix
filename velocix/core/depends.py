@@ -7,7 +7,7 @@ import asyncio
 import inspect
 import types
 from collections.abc import Callable
-from typing import Any, TypeVar, Union, get_args, get_origin, get_type_hints
+from typing import Any, Union, get_args, get_origin, get_type_hints
 
 import msgspec
 import orjson
@@ -83,8 +83,6 @@ PlanEntry = tuple[
     type | None,
 ]
 _plan_cache: dict[int, tuple[Callable[..., Any], PlanEntry]] = {}
-
-T = TypeVar("T")
 
 
 class Depends:
@@ -656,69 +654,3 @@ async def resolve_dependencies(
 
     return kwargs
 
-
-class DependencyCache:
-    """
-    Request-scoped dependency cache (FastAPI pattern).
-    Automatically managed by resolve_dependencies.
-    """
-
-    __slots__ = ("_cache",)
-
-    def __init__(self):
-        self._cache: dict[str, Any] = {}
-
-    def get(self, key: str, default: Any = None) -> Any:
-        """Get cached dependency"""
-        return self._cache.get(key, default)
-
-    def set(self, key: str, value: Any) -> None:
-        """Cache dependency"""
-        self._cache[key] = value
-
-    def clear(self) -> None:
-        """Clear all cached dependencies"""
-        self._cache.clear()
-
-    def __contains__(self, key: str) -> bool:
-        return key in self._cache
-
-    def __len__(self) -> int:
-        return len(self._cache)
-
-
-def inject(dependency: Callable[..., T]) -> T:
-    """
-    Type-safe dependency injection helper.
-
-    Usage:
-        async def get_db() -> Database:
-            return Database()
-
-        @app.get("/users")
-        async def get_users(db: Database = inject(get_db)):
-            return await db.fetch_all()
-
-    This is a type-safe alternative to Depends() that works better
-    with type checkers like mypy.
-    """
-    return Depends(dependency)  # type: ignore
-
-
-# Cleanup old cache entries to prevent memory leaks
-def cleanup_caches(max_size: int = 1000) -> None:
-    """Clean up signature and type hints caches"""
-    global _sig_cache, _type_hints_cache, _plan_cache
-
-    if len(_sig_cache) > max_size:
-        # Keep most recent entries
-        sig_items = list(_sig_cache.items())
-        _sig_cache = dict(sig_items[-max_size:])
-
-    if len(_type_hints_cache) > max_size:
-        hints_items = list(_type_hints_cache.items())
-        _type_hints_cache = dict(hints_items[-max_size:])
-
-    if len(_plan_cache) > max_size:
-        plan_items = list(_plan_cache.items())
-        _plan_cache = dict(plan_items[-max_size:])
