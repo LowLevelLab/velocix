@@ -57,9 +57,8 @@ from velocix.http.client import HTTPClient
 from velocix.http.multipart import MultipartForm, UploadFile
 
 # OpenAPI and Documentation
-from velocix.openapi.auto_docs import AutoDocRouter, enable_auto_docs
+from velocix.openapi.auto_docs import enable_auto_docs
 from velocix.openapi.decorators import operation, parameter, response
-from velocix.openapi.decorators_style import Body, Path, delete, get, patch, post, put
 from velocix.openapi.generator import OpenAPIGenerator
 from velocix.security.cors import CORSMiddleware
 
@@ -139,20 +138,11 @@ __all__ = [
     "PlainTextResponse",
     "RedirectResponse",
     # OpenAPI & Documentation
-    "AutoDocRouter",
     "enable_auto_docs",
     "OpenAPIGenerator",
     "operation",
     "parameter",
     "response",
-    # Decorator-style syntax
-    "get",
-    "post",
-    "put",
-    "delete",
-    "patch",
-    "Path",
-    "Body",
     # Parameter markers
     "Query",
     "Header",

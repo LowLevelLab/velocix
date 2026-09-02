@@ -1,7 +1,6 @@
 """Automatic OpenAPI generation from function signatures"""
 
 import inspect
-from collections.abc import Callable
 from typing import Any, get_origin, get_type_hints
 
 from ..core.depends import Depends
@@ -505,65 +504,6 @@ def auto_document_function(func: Any, path: str, method: str) -> Any:
     return func
 
 
-class AutoDocRouter:
-    """Router that automatically generates OpenAPI documentation"""
-
-    def __init__(self, auto_docs: bool = True, auto_tags: bool = True):
-        self.routes: list[Any] = []
-        self.auto_docs = auto_docs
-        self.auto_tags = auto_tags
-
-    def _add_route(self, path: str, method: str, handler: Any) -> Any:
-        """Add route with automatic documentation"""
-        if self.auto_docs:
-            handler = auto_document_function(handler, path, method)
-
-        route = type("Route", (), {"path": path, "method": method.upper(), "handler": handler})()
-
-        self.routes.append(route)
-        return handler
-
-    def get(self, path: str) -> Callable:
-        """GET route with auto-docs"""
-
-        def decorator(func: Any) -> Any:
-            return self._add_route(path, "GET", func)
-
-        return decorator
-
-    def post(self, path: str) -> Callable:
-        """POST route with auto-docs"""
-
-        def decorator(func: Any) -> Any:
-            return self._add_route(path, "POST", func)
-
-        return decorator
-
-    def put(self, path: str) -> Callable:
-        """PUT route with auto-docs"""
-
-        def decorator(func: Any) -> Any:
-            return self._add_route(path, "PUT", func)
-
-        return decorator
-
-    def delete(self, path: str) -> Callable:
-        """DELETE route with auto-docs"""
-
-        def decorator(func: Any) -> Any:
-            return self._add_route(path, "DELETE", func)
-
-        return decorator
-
-    def patch(self, path: str) -> Callable:
-        """PATCH route with auto-docs"""
-
-        def decorator(func: Any) -> Any:
-            return self._add_route(path, "PATCH", func)
-
-        return decorator
-
-
 # Integration with existing Velocix router
 def enable_auto_docs(
     app: Any,
@@ -644,8 +584,3 @@ def enable_auto_docs(
 
     return app
 
-
-# Convenience function
-def create_auto_router(auto_docs: bool = True, auto_tags: bool = True) -> AutoDocRouter:
-    """Create a router with automatic OpenAPI documentation"""
-    return AutoDocRouter(auto_docs=auto_docs, auto_tags=auto_tags)

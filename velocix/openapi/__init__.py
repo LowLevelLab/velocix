@@ -1,9 +1,7 @@
 """OpenAPI support for Velocix"""
 
 from .auto_docs import (
-    AutoDocRouter,
     auto_document_function,
-    create_auto_router,
     enable_auto_docs,
     generate_operation_from_function,
 )
@@ -21,23 +19,9 @@ from .decorators import (
     string_schema,
     tag,
 )
-from .decorators_style import (
-    Body,
-    Path,
-    Query,
-    VelocixStyleDocs,
-    create_docs,
-    delete,
-    get,
-    post,
-    put,
-    responses,
-    tags,
-)
 from .generator import (
     OpenAPIGenerator,
     ReDocHandler,
-    SwaggerUIHandler,
     create_openapi_generator,
     setup_docs_routes,
 )
@@ -86,26 +70,11 @@ __all__ = [
     "object_schema",
     # Generator
     "OpenAPIGenerator",
-    "SwaggerUIHandler",
     "ReDocHandler",
     "create_openapi_generator",
     "setup_docs_routes",
-    # Velocix-style (recommended)
-    "get",
-    "post",
-    "put",
-    "delete",
-    "Path",
-    "Query",
-    "Body",
-    "responses",
-    "tags",
-    "VelocixStyleDocs",
-    "create_docs",
     # Auto-documentation (zero decorators!)
-    "AutoDocRouter",
     "enable_auto_docs",
-    "create_auto_router",
     "auto_document_function",
     "generate_operation_from_function",
 ]
