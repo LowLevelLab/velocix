@@ -119,6 +119,7 @@ class Velocix:
         "docs_auth",
         "openapi_schema",
         "tags",
+        "_security_schemes",
     )
 
     def __init__(
@@ -155,9 +156,35 @@ class Velocix:
         self.docs_auth = docs_auth
         self.tags = tags or []
         self.openapi_schema: dict[str, Any] | None = None
+        self._security_schemes: dict[str, dict[str, Any]] = {}
 
         self._setup_default_exception_handlers()
         self._setup_docs_routes()
+
+    def add_security_scheme(
+        self,
+        name: str,
+        type_: str,
+        *,
+        scheme: str | None = None,
+        bearer_format: str | None = None,
+        description: str | None = None,
+    ) -> None:
+        """Register a security scheme shown in /docs (e.g. a bearer-auth "Authorize"
+        button). Purely documentation — pair each protected route's own
+        ``security=[{name: []}]`` with the matching scheme name.
+
+        Usage:
+            app.add_security_scheme("BearerAuth", "http", scheme="bearer", bearer_format="JWT")
+
+            @app.post("/posts", security=[{"BearerAuth": []}])
+            async def create_post(...): ...
+        """
+        from velocix.openapi.models import SecurityScheme
+
+        self._security_schemes[name] = SecurityScheme(
+            type=type_, scheme=scheme, bearer_format=bearer_format, description=description
+        ).to_dict()
 
     def route(
         self,
@@ -173,6 +200,7 @@ class Velocix:
         include_in_schema: bool = True,
         operation_id: str | None = None,
         name: str | None = None,
+        security: list[dict[str, list[str]]] | None = None,
     ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         """
         Decorator for adding routes.
@@ -189,6 +217,9 @@ class Velocix:
             include_in_schema: Whether to include this route in OpenAPI schema
             operation_id: Custom OpenAPI operation ID
             name: Route name for reverse routing via ``request.url_for()``
+            security: OpenAPI security requirements, e.g. ``[{"BearerAuth": []}]``
+                (see ``add_security_scheme``) — shown as a lock icon in docs,
+                purely documentation, does not enforce anything at request time
         """
 
         def decorator(handler: Callable[..., Any]) -> Callable[..., Any]:
@@ -211,6 +242,8 @@ class Velocix:
                 handler.__route_include_in_schema__ = False  # type: ignore[attr-defined]
             if operation_id is not None:
                 handler.__route_operation_id__ = operation_id  # type: ignore[attr-defined]
+            if security is not None:
+                handler.__route_security__ = security  # type: ignore[attr-defined]
             return handler
 
         return decorator
@@ -228,12 +261,14 @@ class Velocix:
         include_in_schema: bool = True,
         operation_id: str | None = None,
         name: str | None = None,
+        security: list[dict[str, list[str]]] | None = None,
     ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         """Decorator for GET routes"""
         return self.route(
             path, {"GET"}, status_code=status_code, response_model=response_model,
             tags=tags, summary=summary, description=description, deprecated=deprecated,
-            include_in_schema=include_in_schema, operation_id=operation_id, name=name
+            include_in_schema=include_in_schema, operation_id=operation_id, name=name,
+            security=security,
         )
 
     def post(
@@ -249,12 +284,14 @@ class Velocix:
         include_in_schema: bool = True,
         operation_id: str | None = None,
         name: str | None = None,
+        security: list[dict[str, list[str]]] | None = None,
     ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         """Decorator for POST routes"""
         return self.route(
             path, {"POST"}, status_code=status_code, response_model=response_model,
             tags=tags, summary=summary, description=description, deprecated=deprecated,
-            include_in_schema=include_in_schema, operation_id=operation_id, name=name
+            include_in_schema=include_in_schema, operation_id=operation_id, name=name,
+            security=security,
         )
 
     def put(
@@ -270,12 +307,14 @@ class Velocix:
         include_in_schema: bool = True,
         operation_id: str | None = None,
         name: str | None = None,
+        security: list[dict[str, list[str]]] | None = None,
     ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         """Decorator for PUT routes"""
         return self.route(
             path, {"PUT"}, status_code=status_code, response_model=response_model,
             tags=tags, summary=summary, description=description, deprecated=deprecated,
-            include_in_schema=include_in_schema, operation_id=operation_id, name=name
+            include_in_schema=include_in_schema, operation_id=operation_id, name=name,
+            security=security,
         )
 
     def delete(
@@ -291,12 +330,14 @@ class Velocix:
         include_in_schema: bool = True,
         operation_id: str | None = None,
         name: str | None = None,
+        security: list[dict[str, list[str]]] | None = None,
     ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         """Decorator for DELETE routes"""
         return self.route(
             path, {"DELETE"}, status_code=status_code, response_model=response_model,
             tags=tags, summary=summary, description=description, deprecated=deprecated,
-            include_in_schema=include_in_schema, operation_id=operation_id, name=name
+            include_in_schema=include_in_schema, operation_id=operation_id, name=name,
+            security=security,
         )
 
     def patch(
@@ -312,12 +353,14 @@ class Velocix:
         include_in_schema: bool = True,
         operation_id: str | None = None,
         name: str | None = None,
+        security: list[dict[str, list[str]]] | None = None,
     ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         """Decorator for PATCH routes"""
         return self.route(
             path, {"PATCH"}, status_code=status_code, response_model=response_model,
             tags=tags, summary=summary, description=description, deprecated=deprecated,
-            include_in_schema=include_in_schema, operation_id=operation_id, name=name
+            include_in_schema=include_in_schema, operation_id=operation_id, name=name,
+            security=security,
         )
 
     def websocket(
@@ -876,36 +919,48 @@ class Velocix:
                     )
 
                     paths: dict[str, PathItem] = {}
-                    if hasattr(self.router, "static_routes"):
-                        for method, routes in self.router.static_routes.items():
-                            for path, handler in routes.items():
-                                if getattr(handler, "__route_include_in_schema__", True) is False:
-                                    continue
-                                if path in (self.openapi_url, self.docs_url, self.redoc_url):
-                                    continue
-                                op = generate_operation_from_function(handler, path, method.upper())
-                                if path not in paths:
-                                    paths[path] = PathItem()
-                                setattr(paths[path], method.lower(), op)
-                    if hasattr(self.router, "route_cache"):
-                        for method, routes in self.router.route_cache.items():
-                            for path, cached in routes.items():
-                                handler = cached.handler
-                                if getattr(handler, "__route_include_in_schema__", True) is False:
-                                    continue
-                                if path in (self.openapi_url, self.docs_url, self.redoc_url):
-                                    continue
-                                op = generate_operation_from_function(handler, path, method.upper())
-                                if path not in paths:
-                                    paths[path] = PathItem()
-                                setattr(paths[path], method.lower(), op)
+                    # Collects every msgspec Struct schema referenced by a request
+                    # body's "$ref" (rewritten to "#/components/schemas/..."), so
+                    # it can be published under components.schemas below instead
+                    # of leaving those refs dangling.
+                    schema_registry: dict[str, Any] = {}
+                    # router._registered is the flat (method, path, handler, name)
+                    # log every add_route() call appends to, so it's the only
+                    # source with every route's original template path (e.g.
+                    # "/posts/{post_id}") regardless of whether it's been hit
+                    # yet. static_routes/route_cache were the wrong source for
+                    # this: route_cache is a resolution cache keyed by the
+                    # *concrete* request path ("/posts/5"), not the template,
+                    # and it's empty for a dynamic route until something
+                    # actually resolves it — so dynamic routes were either
+                    # missing from the docs entirely or, once hit, showed up
+                    # under the literal ID that happened to hit them first.
+                    for method, path, handler, _name in self.router._registered:
+                        if getattr(handler, "__route_include_in_schema__", True) is False:
+                            continue
+                        if path in (self.openapi_url, self.docs_url, self.redoc_url):
+                            continue
+                        op = generate_operation_from_function(
+                            handler, path, method.upper(), schema_registry=schema_registry
+                        )
+                        if path not in paths:
+                            paths[path] = PathItem()
+                        setattr(paths[path], method.lower(), op)
 
                     from velocix.openapi.models import Tag
 
                     tag_objects = [Tag(name=t["name"], description=t.get("description")) for t in self.tags] if self.tags else None
 
+                    components: dict[str, Any] = {}
+                    if schema_registry:
+                        components["schemas"] = schema_registry
+                    if self._security_schemes:
+                        components["securitySchemes"] = self._security_schemes
+                    components = components or None
+
                     self.openapi_schema = OpenAPISpec(
                         openapi="3.1.0",
+                        components=components,
                         info=Info(title=self.title, version=self.version, description=self.description),
                         servers=[Server(url="/", description="Default server")],
                         paths=paths,
@@ -924,10 +979,17 @@ class Velocix:
                     SWAGGER_CSS_URL,
                     SWAGGER_JS_SRI,
                     SWAGGER_JS_URL,
+                    SWAGGER_PRESET_SRI,
+                    SWAGGER_PRESET_URL,
                 )
 
                 js_integrity = f' integrity="{SWAGGER_JS_SRI}" crossorigin="anonymous"' if SWAGGER_JS_SRI else ""
                 css_integrity = f' integrity="{SWAGGER_CSS_SRI}" crossorigin="anonymous"' if SWAGGER_CSS_SRI else ""
+                preset_integrity = (
+                    f' integrity="{SWAGGER_PRESET_SRI}" crossorigin="anonymous"'
+                    if SWAGGER_PRESET_SRI
+                    else ""
+                )
                 html_content = f"""
 <!DOCTYPE html>
 <html>
@@ -940,6 +1002,7 @@ class Velocix:
 <body>
 <div id="swagger-ui"></div>
 <script src="{SWAGGER_JS_URL}"{js_integrity}></script>
+<script src="{SWAGGER_PRESET_URL}"{preset_integrity}></script>
 <script>
 const ui = SwaggerUIBundle({{
     url: '{_html.escape(openapi_url)}',
@@ -947,7 +1010,7 @@ const ui = SwaggerUIBundle({{
     deepLinking: true,
     presets: [
         SwaggerUIBundle.presets.apis,
-        SwaggerUIBundle.SwaggerUIStandalonePreset
+        SwaggerUIStandalonePreset
     ],
     layout: "StandaloneLayout"
 }});

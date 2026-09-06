@@ -315,56 +315,48 @@ class Router:
             self.route_cache[method][path] = CachedRoute(handler, {}, version=self._routes_version)
             return handler, {}
 
-        # Path exists but not for this method
-        allowed = self._find_methods(path) - {method}
-        if allowed:
-            raise MethodNotAllowed(allowed_methods=sorted(allowed))
-
-        # Dynamic route resolution with error handling
+        # Dynamic route resolution. A miss here (wrong method, unknown path, or a
+        # failed constraint) falls through to the "allowed methods" check below
+        # instead of raising immediately, so a path that's valid for a *different*
+        # method correctly reports 405 rather than 404 either way.
         tree = self.method_trees.get(method)
-        if not tree:
-            raise NotFound(f"Route not found: {path}")
-
         current = tree
-        params = {}
+        params: dict[str, str] = {}
+        no_match = tree is None
 
-        try:
-            parts = [p for p in path.split("/") if p]
+        if not no_match:
+            try:
+                parts = [p for p in path.split("/") if p]
 
-            for part in parts:
-                if not part:  # Skip empty parts
-                    continue
+                for part in parts:
+                    if not part:  # Skip empty parts
+                        continue
 
-                if part in current.children:
-                    current = current.children[part]
-                elif current.param_child:
-                    # Check constraints with error handling
-                    param_name = current.param_name
-                    if param_name and param_name in current.param_child.constraints:
-                        constraint = current.param_child.constraints[param_name]
-                        try:
-                            if not constraint(part):
-                                raise NotFound(
-                                    f"Route constraint failed for parameter '{param_name}': {part}"
-                                )
-                        except Exception as e:
-                            raise NotFound(
-                                f"Route constraint error for parameter '{param_name}': {str(e)}"
-                            ) from e
+                    if part in current.children:
+                        current = current.children[part]
+                    elif current.param_child:
+                        # Check constraints with error handling
+                        param_name = current.param_name
+                        if param_name and param_name in current.param_child.constraints:
+                            constraint = current.param_child.constraints[param_name]
+                            try:
+                                if not constraint(part):
+                                    no_match = True
+                                    break
+                            except Exception:
+                                no_match = True
+                                break
 
-                    if param_name:
-                        params[param_name] = part
-                    current = current.param_child
-                elif current is None:
-                    raise NotFound("Route not found: invalid path structure")
-                else:
-                    raise NotFound(f"Route not found: {path}")
-        except Exception as e:
-            if isinstance(e, NotFound):
-                raise
-            raise NotFound(f"Route resolution error: {str(e)}") from e
+                        if param_name:
+                            params[param_name] = part
+                        current = current.param_child
+                    else:
+                        no_match = True
+                        break
+            except Exception:
+                no_match = True
 
-        if current.is_endpoint and method in current.methods:
+        if not no_match and current.is_endpoint and method in current.methods:
             route_handler = current.handler
             if route_handler is None:
                 raise NotFound(f"Route not found: {path}")

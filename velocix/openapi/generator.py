@@ -150,11 +150,13 @@ class OpenAPIGenerator:
 
 
 SWAGGER_JS_URL = "https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.17.14/swagger-ui-bundle.js"
-SWAGGER_JS_SRI = "sha384-KAKFkqVwRCg2WCMZOR9O3YRjQ3nH5IGh7t2hP+B0AfKZ2wqfMp0b5Y1aW1f4h6p"
+SWAGGER_JS_SRI = "sha384-wmyclcVGX/WhUkdkATwhaK1X1JtiNrr2EoYJ+diV3vj4v6OC5yCeSu+yW13SYJep"
+SWAGGER_PRESET_URL = "https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.17.14/swagger-ui-standalone-preset.js"
+SWAGGER_PRESET_SRI = "sha384-2YH8WDRaj7V2OqU/trsmzSagmk/E2SutiCsGkdgoQwC9pNUJV1u/141DHB6jgs8t"
 SWAGGER_CSS_URL = "https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.17.14/swagger-ui.css"
-SWAGGER_CSS_SRI = "sha384-j7aaBaTMjE0D/bEPgVVZ6JzN0Fv6Z3Cq3b3v0HOMR0p3bY3p3K9eN1eMw0JmhU"
+SWAGGER_CSS_SRI = "sha384-wxLW6kwyHktdDGr6Pv1zgm/VGJh99lfUbzSn6HNHBENZlCN7W602k9VkGdxuFvPn"
 REDOC_JS_URL = "https://cdn.jsdelivr.net/npm/redoc@2.1.5/bundles/redoc.standalone.js"
-REDOC_JS_SRI = "sha384-iQwEMK2Gi0dMJSkL0kM0tBJ8R0dOVjY8J3MRLJsY1eCEfS0eFvm1eR+0v5Xf8eR"
+REDOC_JS_SRI = "sha384-0GrsyTQc9Oqd8h+b2dbc4XdR2T/DYpy0tLNNstyx+LBMUyiBbcWPbEs9aRmUcaxD"
 
 
 class SwaggerUIHandler:

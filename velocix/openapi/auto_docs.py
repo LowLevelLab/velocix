@@ -99,12 +99,30 @@ def extract_path_parameters(path: str) -> list[str]:
     return re.findall(r"\{(\w+)\}", path)
 
 
-def generate_schema_from_struct(struct_class: Any) -> dict[str, Any]:
+def _rewrite_defs_refs(node: Any) -> None:
+    """Rewrite msgspec's "#/$defs/X" refs to OpenAPI's "#/components/schemas/X", in place."""
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == "$ref" and isinstance(value, str) and value.startswith("#/$defs/"):
+                node[key] = value.replace("#/$defs/", "#/components/schemas/", 1)
+            else:
+                _rewrite_defs_refs(value)
+    elif isinstance(node, list):
+        for item in node:
+            _rewrite_defs_refs(item)
+
+
+def generate_schema_from_struct(struct_class: Any) -> tuple[dict[str, Any], dict[str, Any]]:
     """
-    Generate OpenAPI schema from msgspec Struct.
+    Generate an OpenAPI schema from a msgspec Struct.
 
     Uses msgspec's native JSON schema generation for best compatibility.
     Falls back to manual inspection if JSON schema generation fails.
+
+    Returns (schema, defs): schema is what goes in the requestBody, and defs
+    is the {StructName: schema} map the caller must merge into the document's
+    top-level components.schemas so schema's "$ref" (rewritten to
+    "#/components/schemas/...") actually resolves.
     """
     try:
         import msgspec
@@ -112,7 +130,9 @@ def generate_schema_from_struct(struct_class: Any) -> dict[str, Any]:
         # Try using msgspec's native JSON schema generation
         # This is the most accurate and handles all msgspec features
         try:
-            # msgspec.json.schema generates a complete JSON Schema
+            # msgspec.json.schema generates a complete JSON Schema: a
+            # {"$ref": "#/$defs/Name", "$defs": {"Name": {...}, ...}} pair,
+            # even for a single non-nested struct.
             schema = msgspec.json.schema(struct_class)
 
             # Convert to plain dict (schema returns a dict-like object)
@@ -121,16 +141,19 @@ def generate_schema_from_struct(struct_class: Any) -> dict[str, Any]:
             elif not isinstance(schema, dict):
                 schema = dict(schema)
 
-            # Clean up the schema for OpenAPI compatibility
-            # Remove $defs if present (we'll inline them for simplicity)
-            if "$defs" in schema:
-                del schema["$defs"]
+            # $defs must be hoisted into the document's components.schemas
+            # (by the caller) rather than dropped: schema's $ref depends on
+            # it, and deleting it here left the $ref dangling.
+            defs = schema.pop("$defs", None) or {}
 
             # Remove schema metadata that's not needed
             if "$schema" in schema:
                 del schema["$schema"]
 
-            return schema
+            _rewrite_defs_refs(schema)
+            _rewrite_defs_refs(defs)
+
+            return schema, defs
 
         except Exception:
             # Fallback to manual inspection using __struct_fields__
@@ -182,11 +205,11 @@ def generate_schema_from_struct(struct_class: Any) -> dict[str, Any]:
         if struct_class.__doc__:
             schema["description"] = struct_class.__doc__.strip()
 
-        return schema
+        return schema, {}
 
     except Exception:
         # Ultimate fallback to generic object schema
-        return {"type": "object"}
+        return {"type": "object"}, {}
 
 
 def _build_schema_from_type_info(type_info: Any) -> dict[str, Any]:
@@ -262,9 +285,12 @@ def _build_schema_from_type_info(type_info: Any) -> dict[str, Any]:
             return {"type": "object"}
 
         elif type_name == "StructType":
-            # Recursively generate schema for nested struct
+            # Recursively generate schema for nested struct, inlined (this is
+            # itself the manual-inspection fallback, so no components.schemas
+            # registry is available here to hoist $defs into).
             if hasattr(type_info, "cls"):
-                return generate_schema_from_struct(type_info.cls)
+                schema, _defs = generate_schema_from_struct(type_info.cls)
+                return schema
             return {"type": "object"}
 
         # Default fallback
@@ -306,10 +332,18 @@ def generate_schema_from_pydantic(model_class: Any) -> dict[str, Any]:
 
 
 def generate_operation_from_function(
-    func: Any, path: str, method: str, auto_tags: bool = True
+    func: Any,
+    path: str,
+    method: str,
+    auto_tags: bool = True,
+    schema_registry: dict[str, Any] | None = None,
 ) -> Operation:
     """
     Automatically generate OpenAPI operation from function signature.
+
+    schema_registry, when given, receives every msgspec Struct schema this
+    operation's request body depends on (keyed by struct name) so the caller
+    can merge it into the document's top-level components.schemas.
 
     Follows FastAPI's approach:
     1. Separate path parameters, query parameters, and body parameters
@@ -404,6 +438,7 @@ def generate_operation_from_function(
                     tags.append(tag)
 
     deprecated = getattr(func, "__route_deprecated__", False)
+    security = getattr(func, "__route_security__", None)
 
     # Generate default responses
     route_status = getattr(func, "__route_status_code__", None)
@@ -437,6 +472,7 @@ def generate_operation_from_function(
         deprecated=deprecated,
         parameters=parameters,  # This contains path and query params only
         responses=responses,
+        security=security,
     )
 
     # Add requestBody ONLY for POST, PUT, PATCH methods (OpenAPI 3.0 spec)
@@ -449,7 +485,9 @@ def generate_operation_from_function(
 
             # Generate schema based on type
             if is_msgspec_struct(annotation):
-                schema = generate_schema_from_struct(annotation)
+                schema, defs = generate_schema_from_struct(annotation)
+                if schema_registry is not None:
+                    schema_registry.update(defs)
             elif is_pydantic_model(annotation):
                 schema = generate_schema_from_pydantic(annotation)
             else:
