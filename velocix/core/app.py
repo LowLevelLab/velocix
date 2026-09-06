@@ -881,33 +881,28 @@ class Velocix:
                     # it can be published under components.schemas below instead
                     # of leaving those refs dangling.
                     schema_registry: dict[str, Any] = {}
-                    if hasattr(self.router, "static_routes"):
-                        for method, routes in self.router.static_routes.items():
-                            for path, handler in routes.items():
-                                if getattr(handler, "__route_include_in_schema__", True) is False:
-                                    continue
-                                if path in (self.openapi_url, self.docs_url, self.redoc_url):
-                                    continue
-                                op = generate_operation_from_function(
-                                    handler, path, method.upper(), schema_registry=schema_registry
-                                )
-                                if path not in paths:
-                                    paths[path] = PathItem()
-                                setattr(paths[path], method.lower(), op)
-                    if hasattr(self.router, "route_cache"):
-                        for method, routes in self.router.route_cache.items():
-                            for path, cached in routes.items():
-                                handler = cached.handler
-                                if getattr(handler, "__route_include_in_schema__", True) is False:
-                                    continue
-                                if path in (self.openapi_url, self.docs_url, self.redoc_url):
-                                    continue
-                                op = generate_operation_from_function(
-                                    handler, path, method.upper(), schema_registry=schema_registry
-                                )
-                                if path not in paths:
-                                    paths[path] = PathItem()
-                                setattr(paths[path], method.lower(), op)
+                    # router._registered is the flat (method, path, handler, name)
+                    # log every add_route() call appends to, so it's the only
+                    # source with every route's original template path (e.g.
+                    # "/posts/{post_id}") regardless of whether it's been hit
+                    # yet. static_routes/route_cache were the wrong source for
+                    # this: route_cache is a resolution cache keyed by the
+                    # *concrete* request path ("/posts/5"), not the template,
+                    # and it's empty for a dynamic route until something
+                    # actually resolves it — so dynamic routes were either
+                    # missing from the docs entirely or, once hit, showed up
+                    # under the literal ID that happened to hit them first.
+                    for method, path, handler, _name in self.router._registered:
+                        if getattr(handler, "__route_include_in_schema__", True) is False:
+                            continue
+                        if path in (self.openapi_url, self.docs_url, self.redoc_url):
+                            continue
+                        op = generate_operation_from_function(
+                            handler, path, method.upper(), schema_registry=schema_registry
+                        )
+                        if path not in paths:
+                            paths[path] = PathItem()
+                        setattr(paths[path], method.lower(), op)
 
                     from velocix.openapi.models import Tag
 
