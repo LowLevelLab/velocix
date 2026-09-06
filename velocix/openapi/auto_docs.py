@@ -438,6 +438,7 @@ def generate_operation_from_function(
                     tags.append(tag)
 
     deprecated = getattr(func, "__route_deprecated__", False)
+    security = getattr(func, "__route_security__", None)
 
     # Generate default responses
     route_status = getattr(func, "__route_status_code__", None)
@@ -471,6 +472,7 @@ def generate_operation_from_function(
         deprecated=deprecated,
         parameters=parameters,  # This contains path and query params only
         responses=responses,
+        security=security,
     )
 
     # Add requestBody ONLY for POST, PUT, PATCH methods (OpenAPI 3.0 spec)
