@@ -320,11 +320,12 @@ class Router:
         # instead of raising immediately, so a path that's valid for a *different*
         # method correctly reports 405 rather than 404 either way.
         tree = self.method_trees.get(method)
-        current = tree
+        current: RouteNode | None = tree
         params: dict[str, str] = {}
         no_match = tree is None
 
         if not no_match:
+            assert current is not None
             try:
                 parts = [p for p in path.split("/") if p]
 
@@ -356,7 +357,7 @@ class Router:
             except Exception:
                 no_match = True
 
-        if not no_match and current.is_endpoint and method in current.methods:
+        if not no_match and current is not None and current.is_endpoint and method in current.methods:
             route_handler = current.handler
             if route_handler is None:
                 raise NotFound(f"Route not found: {path}")

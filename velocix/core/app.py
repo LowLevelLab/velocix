@@ -951,12 +951,12 @@ class Velocix:
 
                     tag_objects = [Tag(name=t["name"], description=t.get("description")) for t in self.tags] if self.tags else None
 
-                    components: dict[str, Any] = {}
+                    components_dict: dict[str, Any] = {}
                     if schema_registry:
-                        components["schemas"] = schema_registry
+                        components_dict["schemas"] = schema_registry
                     if self._security_schemes:
-                        components["securitySchemes"] = self._security_schemes
-                    components = components or None
+                        components_dict["securitySchemes"] = self._security_schemes
+                    components: dict[str, Any] | None = components_dict or None
 
                     self.openapi_schema = OpenAPISpec(
                         openapi="3.1.0",
