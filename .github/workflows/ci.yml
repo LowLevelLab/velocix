@@ -29,5 +29,4 @@ jobs:
 
       - run: ruff check .
 
-      - name: mypy (advisory, not gating)
-        run: mypy velocix --ignore-missing-imports || true
+      - run: mypy velocix

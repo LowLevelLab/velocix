@@ -270,9 +270,9 @@ class Router:
             if tags:
                 existing = getattr(handler, "__route_tags__", None)
                 if existing:
-                    handler.__route_tags__ = list(existing) + tags
+                    handler.__route_tags__ = list(existing) + tags  # type: ignore[attr-defined]
                 else:
-                    handler.__route_tags__ = tags
+                    handler.__route_tags__ = tags  # type: ignore[attr-defined]
 
     def url_path_for(self, name: str, /, **path_params: Any) -> str:
         """Build a URL path for a named route (reverse routing).

@@ -86,7 +86,8 @@ def _request_if_none_match(
     if request is not None:
         return request.headers.get(b"if-none-match")
     if scope is not None:
-        for k, v in scope.get("headers", []):
+        headers: list[tuple[bytes, bytes]] = scope.get("headers", [])
+        for k, v in headers:
             if k == b"if-none-match":
                 return v
     return None
@@ -974,6 +975,7 @@ class Velocix:
 
             async def swagger_handler(request: Request) -> HTMLResponse:
                 openapi_url = self.openapi_url
+                assert openapi_url is not None  # guaranteed by the enclosing `if` above
                 from velocix.openapi.generator import (
                     SWAGGER_CSS_SRI,
                     SWAGGER_CSS_URL,
@@ -1024,6 +1026,8 @@ const ui = SwaggerUIBundle({{
         if self.openapi_url and self.redoc_url:
 
             async def redoc_handler(request: Request) -> HTMLResponse:
+                openapi_url = self.openapi_url
+                assert openapi_url is not None  # guaranteed by the enclosing `if` above
                 from velocix.openapi.generator import REDOC_JS_SRI, REDOC_JS_URL
 
                 js_integrity = f' integrity="{REDOC_JS_SRI}" crossorigin="anonymous"' if REDOC_JS_SRI else ""
@@ -1038,7 +1042,7 @@ const ui = SwaggerUIBundle({{
 <style>body {{ margin:0; padding:0; }}</style>
 </head>
 <body>
-<redoc spec-url="{_html.escape(self.openapi_url)}"></redoc>
+<redoc spec-url="{_html.escape(openapi_url)}"></redoc>
 <script src="{REDOC_JS_URL}"{js_integrity}></script>
 </body>
 </html>"""
