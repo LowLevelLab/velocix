@@ -209,11 +209,24 @@ class SecurityMiddleware(BaseMiddleware):
         return event
 
     async def __call__(self, request: Request) -> Response:
-        try:
-            return await self._on_request(request)
-        except Exception:
-            # Security middleware must never crash the request pipeline.
-            return await self.app(request)
+        # No try/except here on purpose: _on_request implementations call
+        # self.app(request) themselves partway through their own checks, and
+        # a bare `except Exception: return await self.app(request)` around
+        # that can't tell "our own check logic raised" from "the call to
+        # self.app(request) we already made raised" -- the latter meant a
+        # single incoming request invoked the downstream handler chain
+        # TWICE, risking real double side effects (e.g. a double DB write)
+        # for any handler that raises after doing one.
+        #
+        # This used to be needed because an exception here would otherwise
+        # propagate past every middleware, bypassing all of it. Velocix's
+        # compiled middleware terminal now catches every exception (routing
+        # failures and handler-raised HTTPExceptions alike) and converts it
+        # to a Response before it ever reaches here, so self.app(request)
+        # returning normally is already the common case; whatever's left
+        # (a bug in this middleware's own pre-dispatch logic) is exactly
+        # what should surface as a real error, not be silently retried.
+        return await self._on_request(request)
 
     async def _on_request(self, request: Request) -> Response:
         """Override this to implement security logic.
