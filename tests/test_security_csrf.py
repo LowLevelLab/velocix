@@ -52,6 +52,20 @@ def test_get_sets_csrf_cookie():
     _run(scenario())
 
 
+def test_csrf_cookie_is_not_httponly():
+    """The double-submit pattern requires client-side JS to read this cookie
+    and echo it back as a header; HttpOnly would make that impossible,
+    silently breaking CSRF protection for every real browser client."""
+    app = _app_with_csrf()
+
+    async def scenario():
+        async with TestClient(app) as client:
+            resp = await client.get("/page")
+            assert "httponly" not in resp.headers["set-cookie"].lower()
+
+    _run(scenario())
+
+
 def test_get_with_existing_valid_cookie_does_not_reset():
     app = _app_with_csrf()
 

@@ -141,7 +141,15 @@ class CSRFMiddleware(SecurityMiddleware):
             return False
 
     def _set_csrf_cookie(self, response: Response, token: str) -> None:
-        """Set the CSRF cookie on the response."""
+        """Set the CSRF cookie on the response.
+
+        Deliberately NOT HttpOnly: the double-submit pattern requires
+        client-side JavaScript to read this cookie and echo its value back
+        in the request header (self._header_name) on state-changing
+        requests -- that's what proves the request came from same-origin
+        script rather than a cross-site form/link. An HttpOnly cookie here
+        can never be read by that script, which defeats the entire scheme.
+        """
         response.raw_headers.append((
             b"set-cookie",
             (
@@ -149,8 +157,7 @@ class CSRFMiddleware(SecurityMiddleware):
                 f"Path={self._cookie_path}; "
                 f"SameSite={self._cookie_samesite}; "
                 f"{'Secure; ' if self._cookie_secure else ''}"
-                f"HttpOnly"
-            ).encode("latin-1"),
+            ).rstrip("; ").encode("latin-1"),
         ))
 
     async def _on_request(self, request: Request) -> Response:
