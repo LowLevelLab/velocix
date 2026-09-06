@@ -924,10 +924,17 @@ class Velocix:
                     SWAGGER_CSS_URL,
                     SWAGGER_JS_SRI,
                     SWAGGER_JS_URL,
+                    SWAGGER_PRESET_SRI,
+                    SWAGGER_PRESET_URL,
                 )
 
                 js_integrity = f' integrity="{SWAGGER_JS_SRI}" crossorigin="anonymous"' if SWAGGER_JS_SRI else ""
                 css_integrity = f' integrity="{SWAGGER_CSS_SRI}" crossorigin="anonymous"' if SWAGGER_CSS_SRI else ""
+                preset_integrity = (
+                    f' integrity="{SWAGGER_PRESET_SRI}" crossorigin="anonymous"'
+                    if SWAGGER_PRESET_SRI
+                    else ""
+                )
                 html_content = f"""
 <!DOCTYPE html>
 <html>
@@ -940,6 +947,7 @@ class Velocix:
 <body>
 <div id="swagger-ui"></div>
 <script src="{SWAGGER_JS_URL}"{js_integrity}></script>
+<script src="{SWAGGER_PRESET_URL}"{preset_integrity}></script>
 <script>
 const ui = SwaggerUIBundle({{
     url: '{_html.escape(openapi_url)}',
@@ -947,7 +955,7 @@ const ui = SwaggerUIBundle({{
     deepLinking: true,
     presets: [
         SwaggerUIBundle.presets.apis,
-        SwaggerUIBundle.SwaggerUIStandalonePreset
+        SwaggerUIStandalonePreset
     ],
     layout: "StandaloneLayout"
 }});
