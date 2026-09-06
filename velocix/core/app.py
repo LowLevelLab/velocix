@@ -876,6 +876,11 @@ class Velocix:
                     )
 
                     paths: dict[str, PathItem] = {}
+                    # Collects every msgspec Struct schema referenced by a request
+                    # body's "$ref" (rewritten to "#/components/schemas/..."), so
+                    # it can be published under components.schemas below instead
+                    # of leaving those refs dangling.
+                    schema_registry: dict[str, Any] = {}
                     if hasattr(self.router, "static_routes"):
                         for method, routes in self.router.static_routes.items():
                             for path, handler in routes.items():
@@ -883,7 +888,9 @@ class Velocix:
                                     continue
                                 if path in (self.openapi_url, self.docs_url, self.redoc_url):
                                     continue
-                                op = generate_operation_from_function(handler, path, method.upper())
+                                op = generate_operation_from_function(
+                                    handler, path, method.upper(), schema_registry=schema_registry
+                                )
                                 if path not in paths:
                                     paths[path] = PathItem()
                                 setattr(paths[path], method.lower(), op)
@@ -895,7 +902,9 @@ class Velocix:
                                     continue
                                 if path in (self.openapi_url, self.docs_url, self.redoc_url):
                                     continue
-                                op = generate_operation_from_function(handler, path, method.upper())
+                                op = generate_operation_from_function(
+                                    handler, path, method.upper(), schema_registry=schema_registry
+                                )
                                 if path not in paths:
                                     paths[path] = PathItem()
                                 setattr(paths[path], method.lower(), op)
@@ -904,8 +913,11 @@ class Velocix:
 
                     tag_objects = [Tag(name=t["name"], description=t.get("description")) for t in self.tags] if self.tags else None
 
+                    components = {"schemas": schema_registry} if schema_registry else None
+
                     self.openapi_schema = OpenAPISpec(
                         openapi="3.1.0",
+                        components=components,
                         info=Info(title=self.title, version=self.version, description=self.description),
                         servers=[Server(url="/", description="Default server")],
                         paths=paths,
