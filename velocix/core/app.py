@@ -494,10 +494,19 @@ class Velocix:
 
         request: Request | None = None
         try:
-            handler, path_params = self.router.resolve(scope["method"], scope["path"])
-            if handler is None:
-                raise NotFound(f"Route not found: {scope['path']}")
-            response = await self._process_request(scope, receive, handler, path_params)
+            if self._middleware_stack:
+                # Defer resolution into _execute_handler's own fallback (it
+                # already does this when handler is None) instead of raising
+                # NotFound/405 here, before middleware ever runs. Otherwise
+                # every unmatched path skips rate limiting, security
+                # scanning, request-id, metrics -- all of it -- since this
+                # try/except is outside build_middleware_stack entirely.
+                response = await self._process_request(scope, receive, None, {})
+            else:
+                handler, path_params = self.router.resolve(scope["method"], scope["path"])
+                if handler is None:
+                    raise NotFound(f"Route not found: {scope['path']}")
+                response = await self._process_request(scope, receive, handler, path_params)
         except Exception as exc:
             if request is None:
                 request = Request(scope, receive)
@@ -541,7 +550,7 @@ class Velocix:
         self,
         scope: dict[str, Any],
         receive: Callable[[], Awaitable[dict[str, Any]]],
-        handler: Callable[..., Any],
+        handler: Callable[..., Any] | None,
         path_params: dict[str, Any],
     ) -> ResponseType:
         """Process HTTP request with error handling and middleware"""
@@ -550,12 +559,15 @@ class Velocix:
             if self._middleware_stack:
                 if self._compiled_middleware is None:
                     self._compiled_middleware = build_middleware_stack(
-                        self._execute_handler, self._middleware_stack
+                        self._dispatch, self._middleware_stack
                     )
 
                 # One plan lookup per request, stashed on the Request so the
                 # middleware terminal re-reads it without another lookup.
-                entry = get_plan_and_needs_request(handler)
+                # handler is None when __call__ deferred resolution here (the
+                # common case now); _execute_handler resolves it lazily via
+                # its own fallback, so there's no plan to prefetch yet.
+                entry = get_plan_and_needs_request(handler) if handler is not None else None
                 request = self._init_request(scope, receive, handler, path_params)
                 request._plan = entry
                 response = await self._compiled_middleware(request)
@@ -568,6 +580,11 @@ class Velocix:
 
             # No middleware: pass everything explicitly so _execute_handler
             # never re-reads handler/plan/path_params off the Request.
+            # __call__ only reaches this branch after resolving a real
+            # handler (raising NotFound itself otherwise), so it's never None
+            # here -- unlike the middleware branch above, which defers
+            # resolution and so passes None on purpose.
+            assert handler is not None
             (
                 plan,
                 needs_request,
@@ -614,7 +631,7 @@ class Velocix:
         self,
         scope: dict[str, Any],
         receive: Callable[[], Awaitable[dict[str, Any]]],
-        handler: Callable[..., Any],
+        handler: Callable[..., Any] | None,
         path_params: dict[str, Any],
     ) -> Request:
         """Build a Request and attach the resolved handler/params"""
@@ -623,6 +640,24 @@ class Velocix:
         request.path_params = path_params
         request._handler = handler
         return request
+
+    async def _dispatch(self, request: Request) -> ResponseType:
+        """Terminal callable for the compiled middleware stack.
+
+        Catches every exception right here -- a router 404/405 (resolved
+        lazily inside _execute_handler when request._handler is None), a
+        handler-raised HTTPException, or an unhandled bug -- and converts it
+        to a Response before returning, instead of letting it propagate as
+        an exception. Every middleware's `response = await self.app(request)`
+        must always get back a real Response, success or error, or it never
+        gets a chance to add its own effect (a request-id header, a
+        Retry-After header, a metrics count) to that response at all --
+        exceptions unwind straight past every middleware's own logic.
+        """
+        try:
+            return await self._execute_handler(request)
+        except Exception as exc:
+            return await self._handle_exception(request, exc)
 
     async def _execute_handler(
         self,
@@ -642,10 +677,17 @@ class Velocix:
             # Called through the middleware stack with a real Request
             handler = request._handler  # type: ignore[union-attr]
             if handler is None:
-                # Fallback for handlers invoked outside the normal request path
-                handler, _ = self.router.resolve(request.method, request.path)  # type: ignore[union-attr]
+                # Resolution was deferred here (by __call__, when middleware
+                # is configured) so a 404/405 still flows through every
+                # middleware instead of bypassing all of it. The resolved
+                # path_params must be kept -- discarding them left every
+                # deferred-resolution request believing it had none, so a
+                # dynamic route like /posts/{id} always failed required-path-
+                # param validation (422) instead of ever reaching the handler.
+                handler, resolved_params = self.router.resolve(request.method, request.path)  # type: ignore[union-attr]
                 if handler is None:
                     raise NotFound()
+                request.path_params = resolved_params  # type: ignore[union-attr]
             path_params = request.path_params  # type: ignore[union-attr]
 
         if plan is None:
