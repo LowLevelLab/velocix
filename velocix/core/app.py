@@ -979,6 +979,12 @@ class Velocix:
                     # missing from the docs entirely or, once hit, showed up
                     # under the literal ID that happened to hit them first.
                     for method, path, handler, _name in self.router._registered:
+                        if method == "WEBSOCKET":
+                            # OpenAPI 3.x has no operation concept for
+                            # WebSocket routes; PathItem has no matching
+                            # field, so this always produced an empty (and
+                            # spec-invalid) {} entry.
+                            continue
                         if getattr(handler, "__route_include_in_schema__", True) is False:
                             continue
                         if path in (self.openapi_url, self.docs_url, self.redoc_url):
