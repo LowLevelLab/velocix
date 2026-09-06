@@ -4,7 +4,6 @@ Velocix Framework - ASGI web framework built to understand async Python patterns
 Built on top of:
 - Granian (Rust ASGI server)
 - orjson (Rust JSON serialization)
-- httptools (C HTTP parsing)
 - msgspec (Rust-speed validation)
 - Radix tree routing with advanced caching
 """
