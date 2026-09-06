@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 import jwt
+from jwt.types import Options
 
 
 class TokenBlacklist:
@@ -214,7 +215,7 @@ class JWTManager:
             if not key_to_use:
                 raise ValueError("No key available for token verification")
 
-            options = {"verify_signature": verify}
+            options: Options = {"verify_signature": verify}
 
             payload = jwt.decode(
                 token,

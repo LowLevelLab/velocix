@@ -145,12 +145,14 @@ class HookManager(BaseMiddleware):
     def __init__(
         self,
         app: Callable[[Request], Awaitable[Response]],
-        hooks: list[Any] | None = None,
+        hooks: list[SecurityHook] | None = None,
     ) -> None:
         super().__init__(app)
-        self._hooks: list[Any] = sorted(hooks or [], key=lambda h: getattr(h, "priority", 100))
+        self._hooks: list[SecurityHook] = sorted(
+            hooks or [], key=lambda h: getattr(h, "priority", 100)
+        )
 
-    def add_hook(self, hook: Any) -> None:
+    def add_hook(self, hook: SecurityHook) -> None:
         """Add a hook and re-sort by priority."""
         self._hooks.append(hook)
         self._hooks.sort(key=lambda h: getattr(h, "priority", 100))

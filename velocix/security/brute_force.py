@@ -147,14 +147,19 @@ class BruteForceProtection(SecurityMiddleware):
 
         If the count exceeds ``max_attempts``, the key is locked out.
         """
-        count = self._backend.incr_sync(f"bf:{key}", self._window_seconds)
+        # incr_sync/reset_sync aren't part of the async StorageBackend Protocol —
+        # _patch_backend() monkey-patches them onto MemoryBackend only (its ops
+        # are plain dict access under the hood, so a sync shim is safe there).
+        # A backend that doesn't get patched (e.g. RedisBackend) would AttributeError
+        # here; see issue tracking async-backend support for record_failure/mark_success.
+        count: int = self._backend.incr_sync(f"bf:{key}", self._window_seconds)  # type: ignore[attr-defined]
         if count >= self._max_attempts:
             self._lock(key)
         return count
 
     def mark_success(self, key: str) -> None:
         """Reset the failure counter and lockout for a key after successful auth."""
-        self._backend.reset_sync(f"bf:{key}")
+        self._backend.reset_sync(f"bf:{key}")  # type: ignore[attr-defined]
         self._lockouts.pop(key, None)
 
     def get_retry_after(self, key: str) -> int:

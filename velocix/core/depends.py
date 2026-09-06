@@ -272,7 +272,7 @@ def _build_resolution_plan(handler: Callable[..., Any]) -> tuple[tuple[str, str,
             body_marker = None
             if isinstance(param_hint, type) and isinstance(getattr(param_hint, '__metadata__', None), tuple):
                 pass
-            elif hasattr(param_hint, '__metadata__'):
+            elif param_hint is not None and hasattr(param_hint, '__metadata__'):
                 for m in param_hint.__metadata__:
                     if isinstance(m, Body):
                         body_marker = m
