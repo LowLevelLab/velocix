@@ -48,6 +48,7 @@ class HTTPClient:
         "_limits",
         "_verify_ssl",
         "_follow_redirects",
+        "_http2",
     )
 
     def __init__(
@@ -60,6 +61,7 @@ class HTTPClient:
         max_keepalive: int = 20,
         verify_ssl: bool = True,
         follow_redirects: bool = True,
+        http2: bool = False,
     ) -> None:
         self._client: httpx.AsyncClient | None = None
         self._timeout = timeout
@@ -71,6 +73,11 @@ class HTTPClient:
         )
         self._verify_ssl = verify_ssl
         self._follow_redirects = follow_redirects
+        # Opt-in: httpx raises ImportError from AsyncClient(http2=True) unless
+        # the optional 'h2' package is installed, so defaulting this to True
+        # made HTTPClient unusable out of the box for anyone who only
+        # installed velocix's declared dependencies (just httpx, no h2).
+        self._http2 = http2
 
     async def __aenter__(self) -> "HTTPClient":
         await self.connect()
@@ -94,7 +101,7 @@ class HTTPClient:
             limits=self._limits,
             verify=self._verify_ssl,
             follow_redirects=self._follow_redirects,
-            http2=True,  # Enable HTTP/2 support
+            http2=self._http2,
         )
 
     async def close(self) -> None:
