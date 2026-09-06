@@ -49,8 +49,15 @@ OpenAPI, security, and testing utilities — built for measurable speed, not cla
 
 ## Installation
 
+> **The package on PyPI is outdated.** `pip install velocix` currently installs
+> `0.1.3`, published before a long series of bug fixes (routing, middleware,
+> OpenAPI docs, dependency declarations, and more). Until a new version is
+> released, install from source:
+
 ```bash
-pip install velocix
+git clone https://github.com/LowLevelLab/velocix.git
+cd velocix
+pip install -e .
 ```
 
 Requires Python 3.10 or newer and an ASGI server:
