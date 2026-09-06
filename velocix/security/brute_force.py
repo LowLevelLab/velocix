@@ -43,13 +43,13 @@ Usage as utility (no middleware)::
     bf._backend = MemoryBackend()
     bf._lockouts: dict[str, float] = {}
 
-    # In your login handler:
+    # In your (async) login handler:
     key = f"login:{username}:{ip}"
     if bf.is_locked(key):
         return JSONResponse({"error": "Account locked"}, status_code=429)
     # ... verify credentials ...
-    bf.record_failure(key)  # on bad password
-    bf.mark_success(key)    # on good password
+    await bf.record_failure(key)  # on bad password
+    await bf.mark_success(key)    # on good password
 """
 
 import time
@@ -142,24 +142,19 @@ class BruteForceProtection(SecurityMiddleware):
         """Lock a key for ``_lockout_seconds`` from now."""
         self._lockouts[key] = time.time() + self._lockout_seconds
 
-    def record_failure(self, key: str) -> int:
+    async def record_failure(self, key: str) -> int:
         """Record a failed attempt. Returns the current count within the window.
 
         If the count exceeds ``max_attempts``, the key is locked out.
         """
-        # incr_sync/reset_sync aren't part of the async StorageBackend Protocol —
-        # _patch_backend() monkey-patches them onto MemoryBackend only (its ops
-        # are plain dict access under the hood, so a sync shim is safe there).
-        # A backend that doesn't get patched (e.g. RedisBackend) would AttributeError
-        # here; see issue tracking async-backend support for record_failure/mark_success.
-        count: int = self._backend.incr_sync(f"bf:{key}", self._window_seconds)  # type: ignore[attr-defined]
+        count = await self._backend.incr(f"bf:{key}", self._window_seconds)
         if count >= self._max_attempts:
             self._lock(key)
         return count
 
-    def mark_success(self, key: str) -> None:
+    async def mark_success(self, key: str) -> None:
         """Reset the failure counter and lockout for a key after successful auth."""
-        self._backend.reset_sync(f"bf:{key}")  # type: ignore[attr-defined]
+        await self._backend.reset(f"bf:{key}")
         self._lockouts.pop(key, None)
 
     def get_retry_after(self, key: str) -> int:
@@ -191,47 +186,3 @@ class BruteForceProtection(SecurityMiddleware):
             )
 
         return await self.app(request)
-
-
-# ---------------------------------------------------------------------------
-# StorageBackend sync wrappers for brute force counting
-# The async StorageBackend protocol is designed for middleware, but brute
-# force often needs sync access from non-async login handlers. These thin
-# wrappers run the async method in a new event loop if needed.
-# ---------------------------------------------------------------------------
-
-def _patch_backend() -> None:
-    """Add sync methods to MemoryBackend and StorageBackend implementations.
-
-    MemoryBackend operations are actually synchronous dict ops, so we can
-    call them directly. For RedisBackend, we'd need to handle async properly.
-    This patch adds ``incr_sync`` and ``reset_sync`` methods.
-    """
-    def _memory_incr_sync(self: MemoryBackend, key: str, window: float) -> int:
-        now = time.time()
-        entry = self._store.get(key)
-        if entry is None or entry[1] <= now:
-            self._store[key] = (1, now + window)
-            return 1
-        count = entry[0] + 1
-        self._store[key] = (count, entry[1])
-        return count
-
-    def _memory_reset_sync(self: MemoryBackend, key: str) -> None:
-        self._store.pop(key, None)
-
-    def _memory_get_sync(self: MemoryBackend, key: str) -> int:
-        entry = self._store.get(key)
-        if entry is None or entry[1] <= time.time():
-            return 0
-        return entry[0]
-
-    if not hasattr(MemoryBackend, "incr_sync"):
-        MemoryBackend.incr_sync = _memory_incr_sync  # type: ignore[attr-defined]
-    if not hasattr(MemoryBackend, "reset_sync"):
-        MemoryBackend.reset_sync = _memory_reset_sync  # type: ignore[attr-defined]
-    if not hasattr(MemoryBackend, "get_sync"):
-        MemoryBackend.get_sync = _memory_get_sync  # type: ignore[attr-defined]
-
-
-_patch_backend()

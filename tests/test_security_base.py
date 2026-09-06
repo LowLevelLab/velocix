@@ -172,51 +172,6 @@ def test_memory_backend_incr_resets_on_window_expiry():
 
 
 # ---------------------------------------------------------------------------
-# MemoryBackend sync methods
-# ---------------------------------------------------------------------------
-
-
-def test_memory_backend_incr_sync():
-    backend = MemoryBackend()
-    assert backend.incr_sync("key1", window=60.0) == 1
-    assert backend.incr_sync("key1", window=60.0) == 2
-    assert backend.incr_sync("key1", window=60.0) == 3
-
-
-def test_memory_backend_get_sync():
-    backend = MemoryBackend()
-    assert backend.get_sync("missing") == 0
-    backend.incr_sync("key1", window=60.0)
-    backend.incr_sync("key1", window=60.0)
-    assert backend.get_sync("key1") == 2
-
-
-def test_memory_backend_reset_sync():
-    backend = MemoryBackend()
-    backend.incr_sync("key1", window=60.0)
-    backend.incr_sync("key1", window=60.0)
-    assert backend.get_sync("key1") == 2
-    backend.reset_sync("key1")
-    assert backend.get_sync("key1") == 0
-
-
-def test_memory_backend_sync_matches_async():
-    """Sync and async methods should produce identical results."""
-    async def scenario():
-        async_backend = MemoryBackend()
-        sync_backend = MemoryBackend()
-
-        for _i in range(5):
-            async_result = await async_backend.incr("key1", window=60.0)
-            sync_result = sync_backend.incr_sync("key1", window=60.0)
-            assert async_result == sync_result
-
-        assert await async_backend.get("key1") == sync_backend.get_sync("key1")
-
-    _run(scenario())
-
-
-# ---------------------------------------------------------------------------
 # HookManager
 # ---------------------------------------------------------------------------
 
