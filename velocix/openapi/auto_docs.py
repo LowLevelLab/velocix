@@ -42,18 +42,6 @@ def is_msgspec_struct(annotation: Any) -> bool:
     return False
 
 
-def is_pydantic_model(annotation: Any) -> bool:
-    """Check if annotation is a Pydantic BaseModel"""
-    try:
-        from pydantic import BaseModel
-
-        if hasattr(annotation, "__mro__"):
-            return BaseModel in annotation.__mro__
-    except (ImportError, AttributeError):
-        pass
-    return False
-
-
 def is_body_parameter(param_name: str, param: inspect.Parameter, annotation: Any) -> bool:
     """
     Determine if a parameter should be treated as request body.
@@ -73,8 +61,8 @@ def is_body_parameter(param_name: str, param: inspect.Parameter, annotation: Any
     if param_name.lower() == "request":
         return False
 
-    # If annotation is a Struct or Pydantic model, it's a body parameter
-    if is_msgspec_struct(annotation) or is_pydantic_model(annotation):
+    # If annotation is a Struct, it's a body parameter
+    if is_msgspec_struct(annotation):
         return True
 
     # Complex types without default values are likely body params
@@ -300,37 +288,6 @@ def _build_schema_from_type_info(type_info: Any) -> dict[str, Any]:
         return {"type": "object"}
 
 
-def generate_schema_from_pydantic(model_class: Any) -> dict[str, Any]:
-    """Generate OpenAPI schema from Pydantic model"""
-    try:
-        # Try Pydantic v2 schema generation
-        if hasattr(model_class, "model_json_schema"):
-            return dict(model_class.model_json_schema())
-        # Fallback to Pydantic v1
-        elif hasattr(model_class, "schema"):
-            return dict(model_class.schema())
-    except Exception:
-        pass
-
-    # Manual fallback
-    schema_props = {}
-    required_fields = []
-
-    if hasattr(model_class, "__fields__"):
-        for field_name, field in model_class.__fields__.items():
-            field_type = field.annotation if hasattr(field, "annotation") else field.type_
-            schema_props[field_name] = {"type": python_type_to_schema_type(field_type).value}
-            if field.required if hasattr(field, "required") else True:
-                required_fields.append(field_name)
-
-    schema = {"type": "object", "properties": schema_props}
-
-    if required_fields:
-        schema["required"] = required_fields
-
-    return schema
-
-
 def generate_operation_from_function(
     func: Any,
     path: str,
@@ -488,8 +445,6 @@ def generate_operation_from_function(
                 schema, defs = generate_schema_from_struct(annotation)
                 if schema_registry is not None:
                     schema_registry.update(defs)
-            elif is_pydantic_model(annotation):
-                schema = generate_schema_from_pydantic(annotation)
             else:
                 # Generic schema for dict/list/other types
                 origin = get_origin(annotation)
