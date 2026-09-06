@@ -84,6 +84,23 @@ PlanEntry = tuple[
 ]
 _plan_cache: dict[int, tuple[Callable[..., Any], PlanEntry]] = {}
 
+# These are keyed by id(func), so their natural upper bound is "every distinct
+# handler/dependency function the app ever passes through here" -- fixed for a
+# typical app, but unbounded for one that builds fresh closures per request.
+# Trim on write, same sweep-then-cap shape as Velocix._prune_response_cache:
+# no expiry concept here (identity-keyed, not time-keyed), so instead of an
+# expired-first sweep this just drops the oldest entries once over the cap,
+# relying on dict's guaranteed insertion order.
+_CACHE_MAX_SIZE = 1000
+
+
+def _trim_cache(cache: dict[int, Any]) -> None:
+    if len(cache) <= _CACHE_MAX_SIZE:
+        return
+    excess = len(cache) - _CACHE_MAX_SIZE
+    for key in list(cache.keys())[:excess]:
+        del cache[key]
+
 
 class Depends:
     """
@@ -125,6 +142,7 @@ def _get_signature(func: Callable[..., Any]) -> inspect.Signature:
     entry = _sig_cache.get(func_id)
     if entry is None or entry[0] is not func:
         _sig_cache[func_id] = (func, inspect.signature(func))
+        _trim_cache(_sig_cache)
         entry = _sig_cache[func_id]
     return entry[1]
 
@@ -143,6 +161,7 @@ def _get_type_hints_cached(func: Callable[..., Any]) -> dict[str, Any]:
         except Exception:
             hints = {}
         _type_hints_cache[func_id] = (func, hints)
+        _trim_cache(_type_hints_cache)
         entry = _type_hints_cache[func_id]
     return entry[1]
 
@@ -323,6 +342,7 @@ def _build_resolution_plan(handler: Callable[..., Any]) -> tuple[tuple[str, str,
             (plan_tuple, needs_request, cache_ttl, call_mode, status_code, response_model, response_class),
         )
         _plan_cache[func_id] = entry
+        _trim_cache(_plan_cache)
     return entry[1][0]
 
 

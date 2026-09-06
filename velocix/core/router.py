@@ -50,6 +50,13 @@ class RouteNode:
 class Router:
     """Ultra-high performance router with advanced caching and optimization"""
 
+    # Per-method cap on route_cache. Static routes are bounded by however many
+    # routes the app registers, but a dynamic route like /users/{id} gets one
+    # CachedRoute per distinct concrete path ever resolved -- unbounded for a
+    # high-cardinality path param. Pruned on every dynamic-route cache write,
+    # same sweep-then-cap shape as Velocix._prune_response_cache.
+    _ROUTE_CACHE_MAX_SIZE: int = 1024
+
     def __init__(self, *, metrics_enabled: bool = False):
         # Per-route metrics (hit counts, avg response time) are opt-in: the
         # counter mutation on every dynamic-route cache hit and the clock
@@ -296,6 +303,25 @@ class Router:
             raise NoMatchFound(name, path_params)
         return quote(template.format(**path_params))
 
+    def _prune_route_cache(self, method: str) -> None:
+        """Evict expired entries first, then oldest entries if still over size.
+
+        Pattern from Velocix._prune_response_cache: sweep expired (via
+        CachedRoute.is_valid()/ttl), then drop oldest by created_at until
+        under the cap.
+        """
+        cache = self.route_cache[method]
+        if len(cache) <= self._ROUTE_CACHE_MAX_SIZE:
+            return
+        expired = [k for k, v in cache.items() if not v.is_valid()]
+        for k in expired:
+            del cache[k]
+        if len(cache) <= self._ROUTE_CACHE_MAX_SIZE:
+            return
+        oldest = sorted(cache, key=lambda k: cache[k].created_at)
+        for k in oldest[: len(cache) - self._ROUTE_CACHE_MAX_SIZE]:
+            del cache[k]
+
     def resolve(self, method: str, path: str) -> tuple[Callable, dict[str, str]]:
         """Ultra-fast route resolution with caching"""
         # Check cache first: no key allocation, no clock reads on the hot path.
@@ -369,6 +395,7 @@ class Router:
                 version=self._routes_version,
                 metrics=RouteMetrics(hit_count=1) if self.metrics_enabled else None,
             )
+            self._prune_route_cache(method)
 
             return handler, params
 
