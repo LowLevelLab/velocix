@@ -6,6 +6,7 @@ import asyncio
 import logging
 import time
 from collections.abc import Awaitable, Callable, Coroutine
+from functools import partial
 from typing import Any
 
 import msgspec
@@ -370,8 +371,24 @@ class Velocix:
         """Decorator for WebSocket routes"""
         return self.route(path, {"WEBSOCKET"}, name=name)
 
-    def add_middleware(self, middleware_class: type[BaseMiddleware] | Callable[..., Any]) -> None:
-        """Add middleware to stack"""
+    def add_middleware(
+        self,
+        middleware_class: type[BaseMiddleware] | Callable[..., Any],
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
+        """Add middleware to the stack.
+
+        Extra positional/keyword args are bound to the middleware's
+        constructor (after `app`), so config no longer requires
+        `functools.partial`:
+
+            app.add_middleware(CORSMiddleware, allow_origins=["https://example.com"])
+
+        A bare class or an already-partial'd callable still works unchanged.
+        """
+        if args or kwargs:
+            middleware_class = partial(middleware_class, *args, **kwargs)
         self._middleware_stack.append(middleware_class)
 
     def include_router(self, router: Router, prefix: str = "", tags: list[str] | None = None) -> None:
