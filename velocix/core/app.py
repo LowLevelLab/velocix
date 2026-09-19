@@ -449,6 +449,13 @@ class Velocix:
             GZipMiddleware, minimum_size=minimum_size, compresslevel=compresslevel
         )
 
+    def enable_trusted_hosts(self, allowed_hosts: list[str]) -> None:
+        """Restrict accepted Host headers. Wraps
+        velocix.core.middleware.TrustedHostMiddleware."""
+        from velocix.core.middleware import TrustedHostMiddleware
+
+        self.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
+
     def include_router(self, router: Router, prefix: str = "", tags: list[str] | None = None) -> None:
         """Merge another router's routes into this app, optionally under a prefix.
 

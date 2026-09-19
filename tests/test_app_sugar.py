@@ -167,3 +167,19 @@ def test_enable_gzip_compresses_large_response():
             assert resp.headers.get("content-encoding") == "gzip"
 
     _run(scenario())
+
+
+def test_enable_trusted_hosts_rejects_unlisted_host():
+    app = Velocix()
+    app.enable_trusted_hosts(["example.com"])
+
+    @app.get("/ping")
+    async def ping():
+        return {"ok": True}
+
+    async def scenario():
+        async with TestClient(app) as client:
+            resp = await client.get("/ping", headers={"host": "evil.com"})
+            assert resp.status_code == 400
+
+    _run(scenario())
