@@ -440,6 +440,15 @@ class Velocix:
         limiter.set_global_window(limit=limit, window_size=window)
         self.add_middleware(RateLimitMiddleware, limiter=limiter)
 
+    def enable_gzip(self, minimum_size: int = 500, compresslevel: int = 9) -> None:
+        """Add gzip response compression. Wraps
+        velocix.core.middleware.GZipMiddleware."""
+        from velocix.core.middleware import GZipMiddleware
+
+        self.add_middleware(
+            GZipMiddleware, minimum_size=minimum_size, compresslevel=compresslevel
+        )
+
     def include_router(self, router: Router, prefix: str = "", tags: list[str] | None = None) -> None:
         """Merge another router's routes into this app, optionally under a prefix.
 

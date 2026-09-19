@@ -151,3 +151,19 @@ def test_enable_rate_limit_returns_429_after_limit():
             assert resp.status_code == 429
 
     _run(scenario())
+
+
+def test_enable_gzip_compresses_large_response():
+    app = Velocix()
+    app.enable_gzip(minimum_size=10)
+
+    @app.get("/big")
+    async def big():
+        return {"data": "x" * 1000}
+
+    async def scenario():
+        async with TestClient(app) as client:
+            resp = await client.get("/big", headers={"accept-encoding": "gzip"})
+            assert resp.headers.get("content-encoding") == "gzip"
+
+    _run(scenario())
