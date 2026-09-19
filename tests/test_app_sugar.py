@@ -78,3 +78,19 @@ def test_add_middleware_with_partial_still_works():
 
     _run(scenario())
     assert _RecordingMiddleware.last_kwargs == {"greeting": "via-partial"}
+
+
+def test_enable_cors_adds_allow_origin_header():
+    app = Velocix()
+    app.enable_cors(allow_origins=["https://example.com"])
+
+    @app.get("/ping")
+    async def ping():
+        return {"ok": True}
+
+    async def scenario():
+        async with TestClient(app) as client:
+            resp = await client.get("/ping", headers={"origin": "https://example.com"})
+            assert resp.headers["access-control-allow-origin"] == "https://example.com"
+
+    _run(scenario())

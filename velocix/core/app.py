@@ -391,6 +391,28 @@ class Velocix:
             middleware_class = partial(middleware_class, *args, **kwargs)
         self._middleware_stack.append(middleware_class)
 
+    def enable_cors(
+        self,
+        allow_origins: list[str] | None = None,
+        allow_methods: list[str] | None = None,
+        allow_headers: list[str] | None = None,
+        allow_credentials: bool = False,
+        max_age: int = 600,
+        allow_origin_regex: str | None = None,
+    ) -> None:
+        """Add CORS support. Wraps velocix.security.cors.CORSMiddleware."""
+        from velocix.security.cors import CORSMiddleware
+
+        self.add_middleware(
+            CORSMiddleware,
+            allow_origins=allow_origins,
+            allow_methods=allow_methods,
+            allow_headers=allow_headers,
+            allow_credentials=allow_credentials,
+            max_age=max_age,
+            allow_origin_regex=allow_origin_regex,
+        )
+
     def include_router(self, router: Router, prefix: str = "", tags: list[str] | None = None) -> None:
         """Merge another router's routes into this app, optionally under a prefix.
 
