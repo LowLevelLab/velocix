@@ -94,3 +94,20 @@ def test_enable_cors_adds_allow_origin_header():
             assert resp.headers["access-control-allow-origin"] == "https://example.com"
 
     _run(scenario())
+
+
+def test_enable_csrf_blocks_post_without_token():
+    app = Velocix()
+    app.enable_csrf(secret_key="test-secret")
+
+    @app.post("/page")
+    async def post_page():
+        return {"ok": True}
+
+    async def scenario():
+        async with TestClient(app) as client:
+            resp = await client.post("/page")
+            assert resp.status_code == 403
+            assert resp.json()["error"]["code"] == "CSRF_COOKIE_MISSING"
+
+    _run(scenario())

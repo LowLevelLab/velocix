@@ -413,6 +413,14 @@ class Velocix:
             allow_origin_regex=allow_origin_regex,
         )
 
+    def enable_csrf(self, secret_key: str, **kwargs: Any) -> None:
+        """Add CSRF double-submit-cookie protection. Wraps
+        velocix.security.csrf.CSRFMiddleware. Extra kwargs (cookie_name,
+        exempt_paths, etc.) pass through."""
+        from velocix.security.csrf import CSRFMiddleware
+
+        self.add_middleware(CSRFMiddleware, secret_key=secret_key, **kwargs)
+
     def include_router(self, router: Router, prefix: str = "", tags: list[str] | None = None) -> None:
         """Merge another router's routes into this app, optionally under a prefix.
 
