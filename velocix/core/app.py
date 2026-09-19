@@ -421,6 +421,14 @@ class Velocix:
 
         self.add_middleware(CSRFMiddleware, secret_key=secret_key, **kwargs)
 
+    def enable_sessions(self, secret_key: str, **kwargs: Any) -> None:
+        """Add signed cookie sessions. Wraps
+        velocix.core.middleware.SessionMiddleware. Extra kwargs (max_age,
+        same_site, etc.) pass through."""
+        from velocix.core.middleware import SessionMiddleware
+
+        self.add_middleware(SessionMiddleware, secret_key=secret_key, **kwargs)
+
     def include_router(self, router: Router, prefix: str = "", tags: list[str] | None = None) -> None:
         """Merge another router's routes into this app, optionally under a prefix.
 

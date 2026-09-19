@@ -111,3 +111,25 @@ def test_enable_csrf_blocks_post_without_token():
             assert resp.json()["error"]["code"] == "CSRF_COOKIE_MISSING"
 
     _run(scenario())
+
+
+def test_enable_sessions_round_trips_value():
+    app = Velocix()
+    app.enable_sessions(secret_key="test-secret")
+
+    @app.get("/set")
+    async def set_session(request):
+        request.session["user"] = "alice"
+        return {"ok": True}
+
+    @app.get("/read")
+    async def read_session(request):
+        return dict(request.session)
+
+    async def scenario():
+        async with TestClient(app) as client:
+            await client.get("/set")
+            resp = await client.get("/read")
+            assert resp.json() == {"user": "alice"}
+
+    _run(scenario())
