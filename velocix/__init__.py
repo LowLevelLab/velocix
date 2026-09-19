@@ -31,11 +31,19 @@ __features__ = [
 
 from functools import partial
 
+from msgspec import Struct
+
 from velocix.core.app import Velocix, cache_response
 from velocix.core.depends import Depends
 from velocix.core.exceptions import HTTPException, NoMatchFound
-from velocix.core.middleware import BaseMiddleware, SessionMiddleware
-from velocix.core.params import Cookie, File, Form, Header, Query
+from velocix.core.middleware import (
+    BaseHTTPMiddleware,
+    BaseMiddleware,
+    GZipMiddleware,
+    SessionMiddleware,
+    TrustedHostMiddleware,
+)
+from velocix.core.params import Body, Cookie, File, Form, Header, Query
 from velocix.core.request import Request
 from velocix.core.response import (
     EventStreamResponse,
@@ -60,6 +68,7 @@ from velocix.openapi.auto_docs import enable_auto_docs
 from velocix.openapi.decorators import operation, parameter, response
 from velocix.openapi.generator import OpenAPIGenerator
 from velocix.security.cors import CORSMiddleware
+from velocix.security.csrf import CSRFMiddleware
 
 # Security
 from velocix.security.jwt import JWTHandler, JWTManager
@@ -127,8 +136,12 @@ __all__ = [
     "HTTPException",
     "NoMatchFound",
     "BaseMiddleware",
+    "BaseHTTPMiddleware",
+    "TrustedHostMiddleware",
+    "GZipMiddleware",
     "Depends",
     "SessionMiddleware",
+    "Struct",
     # Responses
     "StreamingResponse",
     "FileResponse",
@@ -148,6 +161,7 @@ __all__ = [
     "Cookie",
     "Form",
     "File",
+    "Body",
     # Uploads
     "UploadFile",
     "MultipartForm",
@@ -159,6 +173,7 @@ __all__ = [
     "PasswordManager",
     "PasswordHasher",
     "CORSMiddleware",
+    "CSRFMiddleware",
     "RateLimitMiddleware",
     # HTTP & WebSocket
     "HTTPClient",

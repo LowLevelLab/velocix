@@ -183,3 +183,23 @@ def test_enable_trusted_hosts_rejects_unlisted_host():
             assert resp.status_code == 400
 
     _run(scenario())
+
+
+def test_top_level_exports_resolve():
+    import msgspec
+
+    from velocix import (
+        BaseHTTPMiddleware,
+        Body,
+        CSRFMiddleware,
+        GZipMiddleware,
+        Struct,
+        TrustedHostMiddleware,
+    )
+
+    assert Struct is msgspec.Struct
+    assert Body is not None
+    assert TrustedHostMiddleware is not None
+    assert GZipMiddleware is not None
+    assert BaseHTTPMiddleware is not None
+    assert CSRFMiddleware is not None
