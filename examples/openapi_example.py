@@ -8,10 +8,8 @@ This example demonstrates proper parameter categorization following OpenAPI 3.0 
 
 Following FastAPI's approach for automatic OpenAPI generation.
 """
-from velocix import Velocix
+from velocix import Struct, Velocix
 from velocix.core.depends import Depends
-from velocix.openapi import enable_auto_docs
-from velocix.validation import Struct
 
 
 # Data models using msgspec Struct (Velocix's validation system)
@@ -400,54 +398,6 @@ async def upload_avatar(
         "size": avatar_data.get("width", 0)
     }
 
-
-# Enable automatic OpenAPI documentation
-enable_auto_docs(
-    app,
-    title="Velocix API with Proper OpenAPI",
-    version="1.0.0",
-    description="""
-    # Velocix OpenAPI Example
-    
-    This API demonstrates proper OpenAPI 3.0 parameter handling:
-    
-    ## Parameter Types
-    
-    ### Path Parameters
-    - In the URL path: `/users/{user_id}`
-    - Always required
-    - OpenAPI: `in: path`
-    
-    ### Query Parameters
-    - In the query string: `?skip=0&limit=10`
-    - Usually optional with defaults
-    - Scalar types (str, int, bool)
-    - OpenAPI: `in: query`
-    
-    ### Request Body
-    - In POST/PUT/PATCH request body
-    - Complex types (Structs, models, dicts)
-    - Content-Type: application/json
-    - OpenAPI: `requestBody` object (NOT in parameters array)
-    
-    ## Key Principles
-    
-    1. **Separation**: Path/query params go in `parameters[]`, body data goes in `requestBody`
-    2. **Method-specific**: GET/DELETE use parameters only, POST/PUT/PATCH can have requestBody
-    3. **Type-based**: Scalar types → query params, Complex types → request body
-    4. **Dependencies**: Dependency injection params are internal, not in OpenAPI
-    
-    ## Examples
-    
-    - GET with query params: `/users?skip=0&limit=10`
-    - GET with path param: `/users/123`
-    - POST with body: `POST /users` + JSON body
-    - POST with mixed: `POST /users/123/posts?notify=true` + JSON body
-    """,
-    openapi_url="/openapi.json",
-    docs_url="/docs",
-    redoc_url="/redoc"
-)
 
 
 if __name__ == "__main__":
