@@ -6,6 +6,7 @@ import asyncio
 import logging
 import time
 from collections.abc import Awaitable, Callable, Coroutine
+from functools import partial
 from typing import Any
 
 import msgspec
@@ -370,9 +371,90 @@ class Velocix:
         """Decorator for WebSocket routes"""
         return self.route(path, {"WEBSOCKET"}, name=name)
 
-    def add_middleware(self, middleware_class: type[BaseMiddleware] | Callable[..., Any]) -> None:
-        """Add middleware to stack"""
+    def add_middleware(
+        self,
+        middleware_class: type[BaseMiddleware] | Callable[..., Any],
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
+        """Add middleware to the stack.
+
+        Extra positional/keyword args are bound to the middleware's
+        constructor (after `app`), so config no longer requires
+        `functools.partial`:
+
+            app.add_middleware(CORSMiddleware, allow_origins=["https://example.com"])
+
+        A bare class or an already-partial'd callable still works unchanged.
+        """
+        if args or kwargs:
+            middleware_class = partial(middleware_class, *args, **kwargs)
         self._middleware_stack.append(middleware_class)
+
+    def enable_cors(
+        self,
+        allow_origins: list[str] | None = None,
+        allow_methods: list[str] | None = None,
+        allow_headers: list[str] | None = None,
+        allow_credentials: bool = False,
+        max_age: int = 600,
+        allow_origin_regex: str | None = None,
+    ) -> None:
+        """Add CORS support. Wraps velocix.security.cors.CORSMiddleware."""
+        from velocix.security.cors import CORSMiddleware
+
+        self.add_middleware(
+            CORSMiddleware,
+            allow_origins=allow_origins,
+            allow_methods=allow_methods,
+            allow_headers=allow_headers,
+            allow_credentials=allow_credentials,
+            max_age=max_age,
+            allow_origin_regex=allow_origin_regex,
+        )
+
+    def enable_csrf(self, secret_key: str, **kwargs: Any) -> None:
+        """Add CSRF double-submit-cookie protection. Wraps
+        velocix.security.csrf.CSRFMiddleware. Extra kwargs (cookie_name,
+        exempt_paths, etc.) pass through."""
+        from velocix.security.csrf import CSRFMiddleware
+
+        self.add_middleware(CSRFMiddleware, secret_key=secret_key, **kwargs)
+
+    def enable_sessions(self, secret_key: str, **kwargs: Any) -> None:
+        """Add signed cookie sessions. Wraps
+        velocix.core.middleware.SessionMiddleware. Extra kwargs (max_age,
+        same_site, etc.) pass through."""
+        from velocix.core.middleware import SessionMiddleware
+
+        self.add_middleware(SessionMiddleware, secret_key=secret_key, **kwargs)
+
+    def enable_rate_limit(self, limit: int = 100, window: float = 60) -> None:
+        """Add a global rate limit. Wraps
+        velocix.security.ratelimit.RateLimitMiddleware with a
+        ProductionRateLimiter configured for a single global sliding
+        window."""
+        from velocix.security.ratelimit import ProductionRateLimiter, RateLimitMiddleware
+
+        limiter = ProductionRateLimiter()
+        limiter.set_global_window(limit=limit, window_size=window)
+        self.add_middleware(RateLimitMiddleware, limiter=limiter)
+
+    def enable_gzip(self, minimum_size: int = 500, compresslevel: int = 9) -> None:
+        """Add gzip response compression. Wraps
+        velocix.core.middleware.GZipMiddleware."""
+        from velocix.core.middleware import GZipMiddleware
+
+        self.add_middleware(
+            GZipMiddleware, minimum_size=minimum_size, compresslevel=compresslevel
+        )
+
+    def enable_trusted_hosts(self, allowed_hosts: list[str]) -> None:
+        """Restrict accepted Host headers. Wraps
+        velocix.core.middleware.TrustedHostMiddleware."""
+        from velocix.core.middleware import TrustedHostMiddleware
+
+        self.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
 
     def include_router(self, router: Router, prefix: str = "", tags: list[str] | None = None) -> None:
         """Merge another router's routes into this app, optionally under a prefix.

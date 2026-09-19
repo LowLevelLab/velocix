@@ -110,6 +110,23 @@ if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
 ```
 
+### Middleware & security
+
+Common setups are one call — no need to import `functools.partial` or know
+the underlying middleware class names:
+
+```python
+app.enable_cors(allow_origins=["https://example.com"])
+app.enable_csrf(secret_key="your-secret")
+app.enable_sessions(secret_key="your-secret")
+app.enable_rate_limit(limit=100, window=60)
+app.enable_gzip()
+app.enable_trusted_hosts(["example.com"])
+```
+
+For anything these don't cover, `app.add_middleware(MiddlewareClass, **kwargs)`
+works directly — no `functools.partial` needed there either.
+
 ---
 
 ## Performance
