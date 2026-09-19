@@ -133,3 +133,21 @@ def test_enable_sessions_round_trips_value():
             assert resp.json() == {"user": "alice"}
 
     _run(scenario())
+
+
+def test_enable_rate_limit_returns_429_after_limit():
+    app = Velocix()
+    app.enable_rate_limit(limit=2, window=60)
+
+    @app.get("/ping")
+    async def ping():
+        return {"ok": True}
+
+    async def scenario():
+        async with TestClient(app) as client:
+            assert (await client.get("/ping")).status_code == 200
+            assert (await client.get("/ping")).status_code == 200
+            resp = await client.get("/ping")
+            assert resp.status_code == 429
+
+    _run(scenario())

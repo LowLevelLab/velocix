@@ -429,6 +429,17 @@ class Velocix:
 
         self.add_middleware(SessionMiddleware, secret_key=secret_key, **kwargs)
 
+    def enable_rate_limit(self, limit: int = 100, window: float = 60) -> None:
+        """Add a global rate limit. Wraps
+        velocix.security.ratelimit.RateLimitMiddleware with a
+        ProductionRateLimiter configured for a single global sliding
+        window."""
+        from velocix.security.ratelimit import ProductionRateLimiter, RateLimitMiddleware
+
+        limiter = ProductionRateLimiter()
+        limiter.set_global_window(limit=limit, window_size=window)
+        self.add_middleware(RateLimitMiddleware, limiter=limiter)
+
     def include_router(self, router: Router, prefix: str = "", tags: list[str] | None = None) -> None:
         """Merge another router's routes into this app, optionally under a prefix.
 
